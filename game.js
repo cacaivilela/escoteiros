@@ -1,6 +1,6 @@
 /* ESCOTEIROS — jogo 3D em terceira pessoa
-   Mapa baseado no Camping Municipal da Lagoa dos Patos (São Lourenço do Sul, RS). */
-(function () {
+   Mapa baseado no Camping Municipal da Lagoa dos Patos (São Lourenço do Sul, RS).
+   Tudo fica no escopo global do script (sem IIFE) pra cap2.js poder usar as mesmas funções e variáveis. */
 'use strict';
 
 // ---------- utilidades ----------
@@ -236,6 +236,8 @@ function vegetacao() {
   bloqueia(-150, -150, 9); bloqueia(-40, 20, 8);         // banheiro 2, tanques
   bloqueia(-100, -20, 26); bloqueia(40, 30, 20); bloqueia(-160, -90, 22); bloqueia(130, 130, 18); // áreas de acampamento
   bloqueia(-30, -110, 14); bloqueia(230, -100, 30);
+  bloqueia(-37, 4, 17);                                  // árvore do lobinhos.com, roda da alcateia e Alisson
+  bloqueia(-64, -22, 19); bloqueia(-80, 0, 6);           // canteiro do gavião e pedra da cobra (capítulo 2)
 
   const tipos = [
     { n: 0, tronco: [0.35, 0.55, 5.5], copa: 'esfera', copaR: 6.5, copaY: 7.5, mat: M.copa, seq: [] },   // figueira
@@ -693,7 +695,46 @@ const texLobo = (function () {
   const t = new THREE.CanvasTexture(c); t.encoding = THREE.sRGBEncoding; return t;
 })();
 const matLobo = new THREE.MeshLambertMaterial({ map: texLobo });
+
+// ---------- superfícies lisas (estilo Pixelmon) ----------
+// Os personagens e bichos são feitos de esferas/cilindros com poucos segmentos e material Lambert (luz por vértice),
+// então as faces ficam visíveis. suaviza() refaz as geometrias com muito mais segmentos e troca o material por
+// Phong (luz por pixel), como os modelos do Pixelmon: superfície lisa em vez de polígonos aparentes.
+const matLisoCache = new Map();
+function matLiso(m) {
+  if (!m || !m.isMeshLambertMaterial) return m;
+  let p = matLisoCache.get(m);
+  if (!p) {
+    p = new THREE.MeshPhongMaterial({ color: m.color, map: m.map, side: m.side, transparent: m.transparent, opacity: m.opacity, shininess: 6, specular: 0x1a1a1a });
+    matLisoCache.set(m, p);
+  }
+  return p;
+}
+function geoLisa(g) {
+  const p = g.parameters, t = g.type;
+  let n = null;
+  if (t === 'SphereGeometry') n = new THREE.SphereGeometry(p.radius, Math.max(32, p.widthSegments * 2), Math.max(24, p.heightSegments * 2), p.phiStart, p.phiLength, p.thetaStart, p.thetaLength);
+  else if (t === 'CylinderGeometry' && p.radialSegments > 4) n = new THREE.CylinderGeometry(p.radiusTop, p.radiusBottom, p.height, Math.max(32, p.radialSegments * 2), p.heightSegments, p.openEnded, p.thetaStart, p.thetaLength);
+  else if (t === 'ConeGeometry' && p.radialSegments > 4) n = new THREE.ConeGeometry(p.radius, p.height, Math.max(32, p.radialSegments * 2), p.heightSegments, p.openEnded, p.thetaStart, p.thetaLength);
+  else if (t === 'TorusGeometry') n = new THREE.TorusGeometry(p.radius, p.tube, Math.max(16, p.radialSegments * 2), Math.max(32, p.tubularSegments * 2), p.arc);
+  else if (t === 'CircleGeometry') n = new THREE.CircleGeometry(p.radius, Math.max(32, p.segments * 2), p.thetaStart, p.thetaLength);
+  if (!n) return g;
+  // preserva deslocamentos feitos com geometry.translate (pivôs de pernas e braços)
+  g.computeBoundingBox(); n.computeBoundingBox();
+  const c0 = g.boundingBox.getCenter(new THREE.Vector3()), c1 = n.boundingBox.getCenter(new THREE.Vector3());
+  n.translate(c0.x - c1.x, c0.y - c1.y, c0.z - c1.z);
+  return n;
+}
+function suaviza(grupo) {
+  grupo.traverse(o => {
+    if (!o.isMesh) return;
+    o.geometry = geoLisa(o.geometry);
+    o.material = Array.isArray(o.material) ? o.material.map(matLiso) : matLiso(o.material);
+  });
+  return grupo;
+}
 function corCabeloSob(opts) { return opts.cabelo || M.tronco; }
+const bonecos = [];   // todos os escoteiros criados (pra achar quem está falando e mexer a boca)
 function escoteiro(opts) {
   // Personagem arredondado (proporções moderadas): cabeça um pouco maior que o normal, corpo e pernas normais
   opts = opts || {};
@@ -720,6 +761,7 @@ function escoteiro(opts) {
   if (opts.calca) { pernaE.material = opts.calca; pernaD.material = opts.calca; }   // calça comprida
   const tronco = new THREE.Mesh(new THREE.CylinderGeometry(0.24, 0.26, 0.56, 14), camisa); tronco.scale.z = 0.8; tronco.position.y = 1.1;
   const ombros = new THREE.Mesh(new THREE.SphereGeometry(0.25, 14, 10), camisa); ombros.scale.set(1, 0.45, 0.8); ombros.position.y = 1.38;
+  if (opts.gordo) { tronco.scale.set(1.2, 1, 0.95); ombros.scale.set(1.15, 0.45, 0.85); }   // tórax um pouco mais largo
   // braços (pivô no ombro), manga curta + mão
   const braco = (sx) => {
     const b = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.055, 0.5, 8), M.pele);
@@ -729,6 +771,7 @@ function escoteiro(opts) {
     return b;
   };
   const bracoE = braco(-1), bracoD = braco(1);
+  if (opts.gordo) { for (const [b, sx] of [[bracoE, -1], [bracoD, 1]]) { b.position.x = sx * 0.35; b.rotation.z = sx * 0.12; } }   // braços afastados do corpo
   // lenço
   const rolo = new THREE.Mesh(new THREE.TorusGeometry(0.19, 0.045, 8, 16), corLenco); rolo.rotation.x = Math.PI / 2; rolo.position.y = 1.42;
   const lenco = new THREE.Mesh(new THREE.ConeGeometry(0.2, 0.36, 3), corLenco); lenco.rotation.x = Math.PI; lenco.rotation.y = Math.PI / 6; lenco.position.set(0, 1.26, 0.19);
@@ -870,8 +913,36 @@ function escoteiro(opts) {
   chapeu.traverse(o => { if (o.isMesh) o.castShadow = false; });
   cabelo.traverse(o => { if (o.isMesh) o.castShadow = false; });
   g.scale.setScalar(s);
-  g.userData = Object.assign(g.userData || {}, { pernaE, pernaD, bracoE, bracoD, olhos: [olhoE, olhoD], sobs, boca, emote: 'feliz', emoteAte: 0 });
+  suaviza(g);
+  g.userData = Object.assign(g.userData || {}, { pernaE, pernaD, bracoE, bracoD, olhos: [olhoE, olhoD], sobs, boca, emote: 'feliz', emoteAte: 0, falandoAte: 0 });
+  bonecos.push(g);
   return g;
+}
+// Boca mexendo enquanto fala: aviso() chama comecaFalar(nome, ms) e animaBocas() abre/fecha a boca a cada frame.
+// Só NPCs e personagens que ninguém está controlando (o jogador e os extras no controle ficam de fora).
+function bonecoPorNome(nome, comJogadores) {
+  const dele = m => m === jogador || (typeof jogadores !== 'undefined' && jogadores.some(j => j.mesh === m));
+  const nomeDe = m => m.userData.nome || (m === jogador ? PERSONAGENS[personagemId].nome : (typeof jogadores !== 'undefined' && (jogadores.find(j => j.mesh === m) || {}).id ? PERSONAGENS[jogadores.find(j => j.mesh === m).id].nome : ''));
+  const bate = m => { const n = nomeDe(m); return n && (n === nome || n.endsWith(' ' + nome)); };
+  const cands = bonecos.filter(m => m.parent && m.visible && (comJogadores || !dele(m)) && bate(m));
+  if (!cands.length) return null;
+  const p = estado.pos;
+  return cands.sort((a, b) => a.position.distanceToSquared(p) - b.position.distanceToSquared(p))[0];
+}
+function comecaFalar(nome, ms) {
+  const m = bonecoPorNome(nome); if (!m) return;
+  m.userData.falandoAte = tempo + ms / 1000; m.userData.falaFase = rnd(0, 6.28);
+}
+function animaBocas() {
+  for (const m of bonecos) {
+    const u = m.userData; if (!u.falandoAte || !u.boca) continue;
+    const e = EMOTES[u.emote] || EMOTES.feliz;
+    if (tempo > u.falandoAte) { u.falandoAte = 0; u.boca.rotation.z = e.bocaRot; u.boca.scale.set(u.emote === 'surpreso' ? 0.8 : 1, e.bocaEsc, 1); u.boca.position.y = e.bocaY; continue; }
+    // abertura: oscila rápido (sílabas) com uma modulação lenta (pausas)
+    const ab = Math.abs(Math.sin(tempo * 9 + u.falaFase)) * (0.55 + 0.45 * Math.sin(tempo * 2.1 + u.falaFase));
+    if (ab < 0.25) { u.boca.rotation.z = e.bocaRot; u.boca.scale.set(1, e.bocaEsc * 0.8, 1); u.boca.position.y = e.bocaY; }   // fechada: volta pro sorriso
+    else { u.boca.rotation.z = 0; u.boca.scale.set(0.8, 0.4 + ab * 1.4, 1); u.boca.position.y = e.bocaY - 0.01; }   // aberta: arco pra baixo, tipo um "O"
+  }
 }
 // Emotes: mudam olhos (posição), sobrancelhas (inclinação) e boca
 const EMOTES = {
@@ -923,22 +994,32 @@ function cachorro(x, y, opts) {
   const galgo = !!opts.galgo, s = opts.escala || 1;
   const cima = opts.cima, baixo = opts.baixo || opts.cima;
   const compr = galgo ? 0.95 : 0.8, alt = galgo ? 0.34 : 0.4, larg = galgo ? 0.22 : 0.34, perna = galgo ? 0.5 : 0.32;
-  const corpoC = caixa(larg, alt * 0.55, compr, cima, 0, perna + alt * 0.72, 0);
-  const corpoB = caixa(larg * 0.95, alt * 0.5, compr * 0.95, baixo, 0, perna + alt * 0.25, 0);
-  const pescoco = caixa(larg * 0.6, galgo ? 0.42 : 0.28, larg * 0.6, cima, 0, perna + alt + (galgo ? 0.12 : 0.05), compr * 0.42);
-  pescoco.rotation.x = galgo ? -0.6 : -0.4;
-  const cabeca = caixa(larg * 0.75, galgo ? 0.2 : 0.26, galgo ? 0.28 : 0.26, cima, 0, perna + alt + (galgo ? 0.42 : 0.28), compr * 0.55);
-  const focinho = caixa(larg * 0.45, galgo ? 0.12 : 0.16, galgo ? 0.3 : 0.2, baixo, 0, perna + alt + (galgo ? 0.36 : 0.22), compr * 0.55 + (galgo ? 0.26 : 0.2));
-  const orelhaE = caixa(0.06, 0.14, 0.1, cima, -larg * 0.35, perna + alt + (galgo ? 0.52 : 0.4), compr * 0.5); orelhaE.rotation.z = galgo ? 0.5 : 0;
+  // corpo em formas arredondadas (elipsoides e cilindros lisos), sem caixas: barriga clara embaixo, lombo escuro em cima
+  const elipse = (rx, ry, rz, mat, x, y, z) => { const m = new THREE.Mesh(new THREE.SphereGeometry(1, 24, 18), mat); m.scale.set(rx, ry, rz); m.position.set(x, y, z); return m; };
+  const corpoC = elipse(larg * 0.55, alt * 0.5, compr * 0.5, cima, 0, perna + alt * 0.62, 0);
+  const corpoB = elipse(larg * 0.52, alt * 0.42, compr * 0.46, baixo, 0, perna + alt * 0.3, 0);
+  const peito = elipse(larg * 0.5, alt * 0.42, larg * 0.5, baixo, 0, perna + alt * 0.4, compr * 0.32);
+  const pescoco = new THREE.Mesh(new THREE.CylinderGeometry(larg * 0.28, larg * 0.36, galgo ? 0.5 : 0.34, 16), cima);
+  pescoco.position.set(0, perna + alt + (galgo ? 0.1 : 0.03), compr * 0.4); pescoco.rotation.x = galgo ? 0.35 : 0.45;   // inclinado pra frente, do lombo até a cabeça
+  const cabeca = elipse(larg * 0.4, galgo ? 0.12 : 0.15, galgo ? 0.17 : 0.15, cima, 0, perna + alt + (galgo ? 0.42 : 0.28), compr * 0.55);
+  const focinho = elipse(larg * 0.26, galgo ? 0.075 : 0.09, galgo ? 0.19 : 0.13, baixo, 0, perna + alt + (galgo ? 0.36 : 0.22), compr * 0.55 + (galgo ? 0.22 : 0.16));
+  const nariz = new THREE.Mesh(new THREE.SphereGeometry(0.03, 12, 10), M.preto); nariz.position.set(0, perna + alt + (galgo ? 0.39 : 0.25), compr * 0.55 + (galgo ? 0.41 : 0.3));
+  const orelhaE = elipse(0.035, 0.08, 0.055, cima, -larg * 0.35, perna + alt + (galgo ? 0.52 : 0.4), compr * 0.5); orelhaE.rotation.z = galgo ? 0.5 : 0;
   const orelhaD = orelhaE.clone(); orelhaD.position.x = larg * 0.35; orelhaD.rotation.z = galgo ? -0.5 : 0;
   const pernas = [];
   for (const sx of [-1, 1]) for (const sz of [-1, 1]) {
-    const pr = caixa(galgo ? 0.07 : 0.1, perna, galgo ? 0.08 : 0.11, sz > 0 ? cima : baixo, sx * larg * 0.36, perna / 2, sz * compr * 0.38);
-    pr.geometry.translate(0, -perna / 2, 0); pr.position.y = perna; pernas.push(pr); g.add(pr);
+    const rp = galgo ? 0.04 : 0.055;
+    const pr = new THREE.Mesh(new THREE.CylinderGeometry(rp, rp * 0.8, perna, 16), sz > 0 ? cima : baixo);
+    pr.geometry.translate(0, -perna / 2, 0); pr.position.set(sx * larg * 0.36, perna, sz * compr * 0.38); pernas.push(pr); g.add(pr);
+    const pata = elipse(rp * 1.2, rp * 0.7, rp * 1.5, baixo, 0, -perna + rp * 0.5, rp * 0.3); pr.add(pata);
+    const coxa = elipse(rp * 1.3, perna * 0.22, rp * 1.6, sz > 0 ? cima : baixo, 0, -perna * 0.15, 0); pr.add(coxa);
   }
-  const rabo = caixa(0.05, 0.05, galgo ? 0.45 : 0.3, cima, 0, perna + alt * 0.7, -compr * 0.5 - 0.15); rabo.rotation.x = galgo ? 0.5 : -0.6;
-  const olhos = [-1, 1].map(sx => { const o = new THREE.Mesh(new THREE.SphereGeometry(0.025, 6, 6), M.preto); o.position.set(sx * larg * 0.3, perna + alt + (galgo ? 0.46 : 0.32), compr * 0.55 + 0.1); return o; });
-  g.add(corpoC, corpoB, pescoco, cabeca, focinho, orelhaE, orelhaD, rabo, ...olhos);
+  const rabo = new THREE.Mesh(new THREE.CylinderGeometry(0.015, 0.03, galgo ? 0.45 : 0.3, 12), cima);
+  rabo.geometry.translate(0, -(galgo ? 0.45 : 0.3) / 2, 0); rabo.geometry.rotateX(Math.PI / 2);   // pivô na base, apontando pra trás (-z)
+  rabo.position.set(0, perna + alt * 0.75, -compr * 0.36); rabo.rotation.x = galgo ? 0.35 : -0.6;
+  const olhos = [-1, 1].map(sx => { const o = new THREE.Mesh(new THREE.SphereGeometry(0.025, 12, 10), M.preto); o.position.set(sx * larg * 0.3, perna + alt + (galgo ? 0.46 : 0.32), compr * 0.55 + 0.1); return o; });
+  g.add(corpoC, corpoB, peito, pescoco, cabeca, focinho, nariz, orelhaE, orelhaD, rabo, ...olhos);
+  suaviza(g);
   g.traverse(o => { if (o.isMesh) o.castShadow = true; });
   g.scale.setScalar(s);
   scene.add(g);
@@ -1105,22 +1186,35 @@ function npc(x, y, rot, nome, fala, opts) {
 }
 const chefe = npc(MAPA.portaoEntrada.x + 2, MAPA.portaoEntrada.y + 8, 2.4, 'Chefe Diego', 'Bem-vindo, lobinho! A Akelá está esperando a alcateia na árvore do lobinhos.com, em frente à cantina.', { escala: 1.15, camisa: M.lenco, lenco: M.amarelo, touca: true });
 npc(-200, -128, 0.5, 'Escoteiro Pedro', 'A mata aqui é cheia de figueiras e butiás. Cuidado pra não se perder!');
-npc(50, -30, 3, 'Escoteira Ana', 'A água da Lagoa dos Patos é doce e calminha, boa pra nadar!');
 npc(185, 60, 1, 'Escoteiro Lucas', 'Depois do futebol vamos pro Iate Clube ver os barcos.');
 // alcateia em roda ao redor da árvore da bandeira
-npc(ARV_BAND[0] - 6, ARV_BAND[1] - 4, 0.6, 'Akelá', 'Lobinhos, em roda na árvore do lobinhos.com — o nome que a própria alcateia escolheu! O Henrique trouxe os gêmeos, então estamos completos. Aperte E perto dela para fazer a bandeira, e depois podem subir nos galhos pelo A de bambu que a gente amarrou.', { escala: 1.1, camisa: M.lenco, lenco: M.amarelo });
+npc(ARV_BAND[0] - 6, ARV_BAND[1] - 4, 0.6, 'Akelá', 'Lobinhos, em roda na árvore do lobinhos.com — o nome que a própria alcateia escolheu! O Henrique trouxe os gêmeos e a carona — Maria, Dudu e Joaquim —, então estamos completos. Aperte E perto dela para fazer a bandeira, e depois podem subir nos galhos pelo A de bambu que a gente amarrou.', { escala: 1.1, camisa: M.lenco, lenco: M.amarelo });
 [
   ['Lobinho Dudu', 0.9, 'Melhor possível! Essa é a árvore do lobinhos.com — fomos nós, os lobinhos, que demos esse nome pra ela!', { cabelo: new THREE.MeshLambertMaterial({ color: 0xe8c95a }), oculos: true, doidinho: true }],
   ['Lobinha Maria', 2.1, 'Hoje tem jogo na mata depois da bandeira!', { estiloCabelo: 'longo', cabelo: new THREE.MeshLambertMaterial({ color: 0x5a3a1e }) }],
   ['Lobinho Davi', 3.3, 'Lá de cima da árvore do lobinhos.com dá pra ver a lagoa inteira! E a Trailblazer do Tio Henrique lá na portaria.'],
   ['Lobinha Larissa', 4.5, 'A pederneira fica no baú da casinha do salva-vidas, lá na praia! O pai da Lara que me contou.'],
-  ['Lobinho Gui', 5.6, 'Vamos uivar bem alto no Grande Uivo! Auuuu! O Tio Henrique falou que ouve lá da Trailblazer.'],
+  ['Lobinho Joaquim', 5.6, '', { cabelo: new THREE.MeshLambertMaterial({ color: 0xe8c95a }), escala: 0.72, oculos: true, doidinho: true, brabinho: true }],   // irmão mais novo do Dudu: doidinho e brabinho
 ].forEach(([n, a, fala, extra]) => {
   const px = ARV_BAND[0] + Math.cos(a) * 6, py = ARV_BAND[1] + Math.sin(a) * 6;
   const pid = n === 'Lobinho Dudu' ? 'dudu' : n === 'Lobinha Maria' ? 'maria' : null;
   const m = npc(px, py, Math.atan2(ARV_BAND[0] - px, -(ARV_BAND[1] - py)), n, fala, pid ? optsPersonagem(pid) : Object.assign({ bone: true, escala: 0.85 }, extra || {}));
   if (extra && extra.doidinho) npcs[npcs.length - 1].doidinho = true;
+  if (extra && extra.brabinho) aplicaEmote(m, 'bravo', 0);
 });
+// Joaquim, irmão mais novo do Dudu: doidinho igual ao irmão e brabinho (vive de cara fechada)
+interativos.find(i => i.nome === 'Falar com Lobinho Joaquim').acao = () => {
+  const falas = [
+    'Eu sou o Joaquim, irmão do Dudu! E NÃO sou pequeno, tá?! Eu subo na árvore do lobinhos.com mais rápido que ele!',
+    'O Dudu disse que eu sou doidinho que nem ele. Eu sou MAIS doido! E mais brabo! Grrr!',
+    'Vamos uivar bem alto no Grande Uivo! AUUUUU! Eu uivo mais alto que o Dudu, o Tio Henrique ouve lá da Trailblazer!',
+    'Quem mexer com o meu irmão vai ter que se ver comigo! ...mas o Dudu também é chato, viu. Hmpf.',
+    'O Dudu fica fazendo 67 o dia inteiro. SEIS SETE, SEIS SETE... Eu vou explodir!! Hehe, brincadeira. Ou não.',
+  ];
+  const m = npcs.find(n => n.nome === 'Lobinho Joaquim').mesh;
+  aplicaEmote(m, Math.random() < 0.7 ? 'bravo' : 'feliz', 0); setTimeout(() => aplicaEmote(m, 'bravo', 0), 5000);   // volta pra cara fechada depois de falar
+  aviso('Lobinho Joaquim: "' + falas[Math.floor(Math.random() * falas.length)] + '"', 5000);
+};
 // Maria é a melhor amiga da Lara: fala diferente dependendo de quem está jogando
 interativos.find(i => i.nome === 'Falar com Lobinha Maria').acao = () => {
   const falas = personagemId === 'lara'
@@ -1140,7 +1234,7 @@ interativos.find(i => i.nome === 'Falar com Lobinho Dudu').acao = () => {
 
 // Alisson, o lobinho mais baixinho, quer achar o Phantom (Fantasma), o galgo do camping — sem dono
 const ALISSON = [ARV_BAND[0] - 9, ARV_BAND[1] + 7];
-const alisson = npc(ALISSON[0], ALISSON[1], 2.6, 'Lobinho Alisson', 'Você viu o Fantasma?', { bone: true, escala: 0.7 });
+const alisson = npc(ALISSON[0], ALISSON[1], 2.6, 'Lobinho Alisson', 'Você viu o Fantasma?', { bone: true, escala: 0.74, gordo: true });
 // Phantom (Fantasma) começa em cima da árvore do lobinhos.com; foge pro chuveiro, depois pra portaria, e só lá deixa ser pego
 const PHANTOM_ARV = [ARV_BAND[0] + Math.cos(ARV_GALHOS[1]) * 2.2, ARV_BAND[1] - Math.sin(ARV_GALHOS[1]) * 2.2];
 const CHUVEIRO_POS = [32, -22], PORTARIA_POS = [MAPA.portaoEntrada.x + 4, MAPA.portaoEntrada.y + 6];
@@ -1197,6 +1291,7 @@ function iniciaFuga(estagioNovo) {
   }
 }
 function atualizaCena(dt) {
+  if (cena.cap2) return atualizaCenaCap2(dt);
   if (cena.historia) return atualizaHistoria(dt);
   if (cena.noite2Intro) return atualizaNoite2Intro(dt);
   if (cena.estrelas) return atualizaEstrelas(dt);
@@ -1280,6 +1375,7 @@ function cameraEstrelas() {   // de trás dos quatro, subindo devagar pro céu
   camera.lookAt(estado.pos.x, 2 + k * 40, estado.pos.z - 60);
 }
 function cameraDaCena() {
+  if (cena.cap2) return cameraCap2();
   if (cena.historia) return cameraHistoria();
   if (cena.estrelas) return cameraEstrelas();
   if (cena.noite2Intro || cena.amanhece2) return;
@@ -1493,11 +1589,20 @@ function atualizaIntro(dt) {
       if (jGemeo) { outroLobinho = jGemeo.mesh; jGemeo.pos.set(po.x, 0, po.z); jGemeo.yaw = Math.atan2(-perp.x, -perp.z); outroLobinho.position.copy(jGemeo.pos); outroLobinho.rotation.y = jGemeo.yaw; }
       else outroLobinho = npc(po.x, -po.z, Math.atan2(-perp.x, -perp.z), PERSONAGENS[outroId].nome, '', PERSONAGENS[outroId].opts);
       if (!jGemeo) interativos.find(i => i.nome === 'Falar com ' + PERSONAGENS[outroId].nome).acao = () => aviso(PERSONAGENS[outroId].nome + ': "' + (outroId === 'caio' ? 'Vou lá na roda ver o Dudu, mana. Te encontro na árvore do lobinhos.com! E não conta pra ninguém que eu sou 3 minutos mais velho... ah, todo mundo já sabe.' : 'Vou lá na roda ver a Maria, mano. Te encontro na árvore do lobinhos.com! Gêmeos têm que ficar juntos, né?') + '"', 4500);
+      // a carona (Maria, Dudu e Joaquim) desce pelo banco de trás; voltam pros lugares deles na roda quando chegam na árvore
+      cena.carona = ['Lobinha Maria', 'Lobinho Dudu', 'Lobinho Joaquim'].map(n => npcs.find(x => x.nome === n))
+        .filter(n => n && n.mesh.parent && !jogadores.some(j => j.mesh === n.mesh))
+        .map(n => ({ mesh: n.mesh, casa: n.mesh.position.clone(), rot: n.mesh.rotation.y }));
+      cena.carona.forEach((c, i) => {
+        const p = pos.clone().add(perp.clone().multiplyScalar([1.7, -1.7, 0][i])).add(dir.clone().multiplyScalar([-1.6, -2.2, -3.4][i]));
+        c.mesh.position.set(p.x, alt(p.x, p.z), p.z); c.mesh.rotation.y = Math.atan2(-perp.x, -perp.z);
+      });
       cena.fase = 'sai'; cena.t = 0;
       aviso('Pai: "Chegamos! Podem descer."', 3000);
     }
   } else if (cena.fase === 'sai') {
-    if (cena.t > 2.6) {
+    if (cena.t > 2.0 && !cena.duduFalou) { cena.duduFalou = true; if (cena.carona.some(c => c.mesh.userData.nome === 'Lobinho Dudu')) aviso('Lobinho Dudu: "Valeu pela carona, Tio Henrique! Bora, Joaquim, sai do carro!"', 2800); }
+    if (cena.t > 4.2) {
       cena.fase = 'anda'; cena.t = 0; cena.idx = 0; cena.andando = true; cena.px = carro.position.x; cena.pz = carro.position.z + 3;
       aviso('Pai: "Vem, vamos até a árvore do lobinhos.com, a alcateia tá esperando vocês pra bandeira."', 4000);
     }
@@ -1512,8 +1617,14 @@ function atualizaIntro(dt) {
       pai.position.set(cena.px, alt(cena.px, cena.pz), cena.pz); pai.rotation.y = yaw;
       estado.pos.set(cena.px + perp.x * 1.1 - Math.sin(yaw) * 1.2, 0, cena.pz + perp.z * 1.1 - Math.cos(yaw) * 1.2); estado.pos.y = alt(estado.pos.x, estado.pos.z); estado.yaw = yaw;
       outroLobinho.position.set(cena.px - perp.x * 1.1 - Math.sin(yaw) * 1.2, 0, cena.pz - perp.z * 1.1 - Math.cos(yaw) * 1.2); outroLobinho.position.y = alt(outroLobinho.position.x, outroLobinho.position.z); outroLobinho.rotation.y = yaw;
-      cena.fase2 = (cena.fase2 || 0) + dt * 9;
-      for (const m of [pai, outroLobinho]) { const u = m.userData, sw = Math.sin(cena.fase2) * 0.6; u.pernaE.rotation.x = sw; u.pernaD.rotation.x = -sw; u.bracoE.rotation.x = -sw; u.bracoD.rotation.x = sw; }
+      // a carona vem atrás, em fila dupla
+      cena.carona.forEach((c, i) => {
+        const tras = [2.0, 2.0, 3.4][i], lat = [-0.9, 0.9, 0][i];
+        c.mesh.position.set(cena.px - Math.sin(yaw) * tras + perp.x * lat, 0, cena.pz - Math.cos(yaw) * tras + perp.z * lat);
+        c.mesh.position.y = alt(c.mesh.position.x, c.mesh.position.z); c.mesh.rotation.y = yaw;
+      });
+      cena.fase2 = (cena.fase2 || 0) + dt * 3;
+      for (const m of [pai, outroLobinho, ...cena.carona.map(c => c.mesh)]) { const u = m.userData, sw = Math.sin(cena.fase2) * 0.6; u.pernaE.rotation.x = sw; u.pernaD.rotation.x = -sw; u.bracoE.rotation.x = -sw; u.bracoD.rotation.x = sw; }
     }
     if (cena.t > 5.5 && !cena.escureceu) { cena.escureceu = true; fadeEl.style.opacity = 1; }
     if (cena.t > 6.6) {
@@ -1523,7 +1634,8 @@ function atualizaIntro(dt) {
       estado.pos.set(ax + 2, altO(ax + 2, ay - 9), -(ay - 9)); estado.yaw = 0; cam.yaw = 0; cam.pitch = 0.25;
       pai.position.set(ax + 9, altO(ax + 9, ay - 8), -(ay - 8)); pai.rotation.y = -0.9;
       const a = 5.9; outroLobinho.position.set(ax + Math.cos(a) * 6, altO(ax + Math.cos(a) * 6, ay + Math.sin(a) * 6), -(ay + Math.sin(a) * 6)); outroLobinho.rotation.y = Math.atan2(ax - outroLobinho.position.x, -ay - outroLobinho.position.z);
-      for (const m of [pai, outroLobinho]) { const u = m.userData; u.pernaE.rotation.x = u.pernaD.rotation.x = u.bracoE.rotation.x = u.bracoD.rotation.x = 0; }
+      for (const c of cena.carona) { c.mesh.position.copy(c.casa); c.mesh.rotation.y = c.rot; }
+      for (const m of [pai, outroLobinho, ...cena.carona.map(c => c.mesh)]) { const u = m.userData; u.pernaE.rotation.x = u.pernaD.rotation.x = u.bracoE.rotation.x = u.bracoD.rotation.x = 0; }
       const jG = jogadores.find(j => j.mesh === outroLobinho); if (jG) { jG.pos.copy(outroLobinho.position); jG.yaw = outroLobinho.rotation.y; }
       // atualiza os pontos de interação dos dois
       const ip = interativos.find(i => i.nome === 'Falar com Pai'); ip.x = pai.position.x; ip.z = pai.position.z;
@@ -1620,6 +1732,7 @@ function interativoProximoEm(x, z, extra) {
 }
 function atualizaExtra(j, dt) {
   const inp = lerPad(j.pad); if (!inp) return;
+  if (!j.escolhendo && cap2PadExtra(j, inp)) return;
   if (j.escolhendo) {
     if (inp.esq) { j.opcao = (j.opcao + j.livres.length - 1) % j.livres.length; mostraEscolha(j); }
     if (inp.dir) { j.opcao = (j.opcao + 1) % j.livres.length; mostraEscolha(j); }
@@ -1674,7 +1787,7 @@ function procuraNovosPads() {
     const inp = lerPad(i); if (!inp) continue;
     if (inp.start || inp.a) {
       ligaSom();
-      if (p1Pad === null && !inicio.style.display.match(/none/) ) { p1Pad = i; aviso('🎮 Controle ligado ao Jogador 1', 2500); if (!travado) { inicio.style.display = 'none'; travado = true; if (!introFeita) iniciaIntro(); } }
+      if (p1Pad === null && !inicio.style.display.match(/none/) ) { p1Pad = i; aviso('🎮 Controle ligado ao Jogador 1', 2500); if (!travado) { inicio.style.display = 'none'; travado = true; if (!introFeita) { if (capituloEscolhido >= 2) iniciaCapitulo(); else iniciaIntro(); } } }
       else if (p1Pad === null) { p1Pad = i; aviso('🎮 Controle ligado ao Jogador 1', 2500); }
       else novoJogador(i);
     }
@@ -1760,7 +1873,7 @@ function atualizaAspira(dt) {
       lencol.visible = false; lencol.scale.setScalar(1); lencol.rotation.y = 0; SOM.aspirador(false); SOM.pop();
       cena.fase = 'revela'; cena.t = 0; aplicaEmote(jogador, 'surpreso', 0);
       // aparece o Alisson, sem lençol, no lugar do fantasma
-      const m = npc(cena.alvo.x, -cena.alvo.z, estado.yaw + Math.PI, 'Alisson', '', { bone: true, escala: 0.7 }); m.userData.noite = true; aplicaEmote(m, 'surpreso', 0);
+      const m = npc(cena.alvo.x, -cena.alvo.z, estado.yaw + Math.PI, 'Alisson', '', { bone: true, escala: 0.74, gordo: true }); m.userData.noite = true; aplicaEmote(m, 'surpreso', 0);
       interativos.find(i => i.nome === 'Falar com Alisson').acao = () => aviso('Alisson: "Hehehe, era eu com o lençol! Eu também não conseguia dormir, ' + PERSONAGENS[personagemId].nome + '... aí resolvi assombrar o camping. Foi mal!"', 6000);
       aviso('Alisson: "EI! Meu lençol! ...hehehe, era EU! Cê caiu direitinho!"', 5000); SOM.risada();
       setTimeout(() => aplicaEmote(m, 'feliz', 0), 2500);
@@ -1866,7 +1979,7 @@ function atualizaAmanhece2(dt) {
     for (const m of n2.seguidores) for (const o of obstaculos) if (o.npc === m) o.r = 0.5;
     n2.seguidores = []; n2.fase = null;
     completa('n2dormir');
-    setTimeout(() => { aviso('🏕️ FIM DO ACAMPAMENTO — obrigado por jogar! Bandeira, fogueira, o Fantasma, a noite assombrada, o sonho, as obras e as estrelas. Melhor possível! 🐺', 12000); SOM.fim(); }, 1500);
+    setTimeout(() => { aviso('🏕️ FIM DO CAPÍTULO 1 — obrigado por jogar! Bandeira, fogueira, o Fantasma, a noite assombrada, o sonho, as obras e as estrelas. Melhor possível! 🐺', 12000); SOM.fim(); mostraBotaoCap2(); }, 1500);
   }
   if (cena.t > 4.8) fadeEl.style.opacity = 0;
   if (cena.t > 5.6) { cena = null; document.getElementById('hud').style.opacity = 1; }
@@ -2179,6 +2292,16 @@ function usaHabilidade(pl) {
   const id = pl.id, u = pl.mesh.userData;
   if (cena) return;
   if (id === 'caio') {
+    // batucar no Joaquim (irmão do Dudu): ele não gosta nada
+    const jq = npcs.find(n => n.nome === 'Lobinho Joaquim');
+    if (jq && jq.mesh.visible && Math.hypot(jq.mesh.position.x - pl.pos.x, jq.mesh.position.z - pl.pos.z) < 2.6) {
+      if (u.batucando) return;
+      u.batucando = tempo + 1.3; if (u.baquetas) u.baquetas.forEach(b => b.visible = true);
+      pl.mesh.rotation.y = Math.atan2(jq.mesh.position.x - pl.pos.x, jq.mesh.position.z - pl.pos.z); if (pl.p1) estado.yaw = pl.mesh.rotation.y;
+      for (let i = 0; i < 4; i++) setTimeout(() => SOM.tap(), i * 200);
+      setTimeout(() => { aplicaEmote(jq.mesh, 'bravo', 0); aviso('Lobinho Joaquim: "Caio! Eu não sou uma bateria!"', 3500); }, 800);
+      return;
+    }
     const a = arvoreProxima(pl.pos.x, pl.pos.z);
     if (!a) { aviso('Chega perto de uma árvore pra batucar 🥁', 2000); return; }
     if (u.batucando) return;
@@ -2354,6 +2477,7 @@ function proximoProjeto() {
 }
 interativos.push({ x: 0, z: 0, r: 0, nome: 'Construir no canteiro', cond: () => dia2 && !!obra && !mini, acao: () => { estado.yaw = Math.atan2(obra.p.x - estado.pos.x, -obra.p.y - estado.pos.z); abreMini(obra.p.etapas[obra.etapa][0], obra.p.etapas[obra.etapa]); } });
 function etapaConcluida() {
+  if (cap2Etapa()) return;   // gavião do capítulo 2
   if (!obra) return;
   const p = obra.p; obra.etapa++;
   const m = missoes.find(x => x.id === 'proj_' + p.id); if (m) { m.txt = p.nome + ' — construir no canteiro (' + obra.etapa + '/' + p.etapas.length + ' etapas)'; renderMissoes(); }
@@ -2698,7 +2822,33 @@ addEventListener('keyup', e => { if (!mini) return; if (e.code === 'KeyE') miniT
 // ---------- HUD ----------
 const avisoEl = document.getElementById('aviso');
 let avisoTimer;
-function aviso(t, ms) { avisoEl.textContent = t; avisoEl.style.opacity = 1; clearTimeout(avisoTimer); avisoTimer = setTimeout(() => avisoEl.style.opacity = 0, Math.max(ms || 2500, 1500 + t.length * 45)); if (/^[^:]{2,24}: "/.test(t)) SOM.fala(Math.floor(t.length / 6)); }
+function aviso(t, ms) { avisoEl.textContent = t; avisoEl.style.opacity = 1; clearTimeout(avisoTimer); avisoTimer = setTimeout(() => avisoEl.style.opacity = 0, Math.max(ms || 2500, 1500 + t.length * 45)); const f = /^([^:]{2,24}): "/.exec(t); if (f) { SOM.fala(Math.floor(t.length / 6)); try { comecaFalar(f[1], Math.min(Math.max(ms || 2500, 1500 + t.length * 45), 800 + t.length * 40)); mostraBalao(f[1], t.slice(f[0].length), Math.max(ms || 2500, 1500 + t.length * 45)); } catch (e) {} } }
+// ---------- balão de fala (quadrinhos) ----------
+const balaoEl = document.getElementById('balao');
+let balao = null;   // { mesh, ate }
+function mostraBalao(nome, texto, ms) {
+  const m = bonecoPorNome(nome, true); if (!m) return;
+  balaoEl.innerHTML = ''; const n = document.createElement('span'); n.className = 'nome'; n.textContent = nome; balaoEl.appendChild(n);
+  balaoEl.appendChild(document.createTextNode(texto.replace(/"\s*$/, '').replace(/"\s*(\(.*\))\s*$/, ' $1')));
+  balao = { mesh: m, ate: tempo + ms / 1000 };
+  avisoEl.style.opacity = 0;   // com balão não precisa da barra em cima
+  atualizaBalao();
+}
+const _pB = new THREE.Vector3();
+function atualizaBalao() {
+  if (!balao) return;
+  if (tempo > balao.ate || !balao.mesh.parent || !balao.mesh.visible) { balao = null; balaoEl.style.opacity = 0; return; }
+  // viewport da câmera principal (pode ser tela dividida)
+  const ativos = jogadores.filter(j => !j.escolhendo), n = ativos.length + 1, W = innerWidth, H = innerHeight;
+  const r = n === 1 ? [0, 0, W, H] : n === 2 ? [0, 0, W / 2, H] : [0, 0, W / 2, H / 2];   // left, top, w, h (tela)
+  _pB.copy(balao.mesh.position); _pB.y += 2.15 * balao.mesh.scale.x;
+  _pB.project(camera);
+  if (_pB.z > 1) { balaoEl.style.opacity = 0; return; }
+  const bw = balaoEl.offsetWidth || 200, bh = balaoEl.offsetHeight || 60;
+  let x = r[0] + (_pB.x + 1) / 2 * r[2], y = r[1] + (1 - _pB.y) / 2 * r[3];
+  x = Math.max(r[0] + bw / 2 + 6, Math.min(r[0] + r[2] - bw / 2 - 6, x)); y = Math.max(r[1] + bh + 24, Math.min(r[1] + r[3] - 10, y));
+  balaoEl.style.left = x + 'px'; balaoEl.style.top = (y - 6) + 'px'; balaoEl.style.opacity = 1;
+}
 const localEl = document.getElementById('local'), dicaEl = document.getElementById('dica');
 
 // minimapa
@@ -2761,6 +2911,7 @@ function ligaSom() { SOM.liga(); if (inicio.style.display !== 'none') SOM.menu(t
 addEventListener('pointerdown', ligaSom); addEventListener('keydown', ligaSom, { once: false });
 addEventListener('keydown', e => {
   teclas[e.code] = true;
+  if (cap2Tecla(e)) return;   // capítulo 2 (cap2.js)
   if (e.code === 'KeyN') aviso(SOM.mudo() ? '🔇 Som desligado' : '🔊 Som ligado', 1500);
   if (e.code === 'KeyM') alternaMapa();
   if (e.code === 'KeyE') { if (cena && cena.historia) proximaFala(); else interagir(); }
@@ -2782,7 +2933,7 @@ document.addEventListener('pointerlockchange', () => {
   if (travado) { SOM.menu(false); SOM.ambiente(true); pausaEl.style.display = 'none'; }
   else if (jogoIniciado) { pausaEl.style.display = 'flex'; }
   else { SOM.ambiente(false); SOM.menu(true); }
-  if (travado && !introFeita) iniciaIntro();
+  if (travado && !introFeita) { if (capituloEscolhido >= 2) iniciaCapitulo(); else iniciaIntro(); }
   inicio.style.display = (travado || DEBUG || jogoIniciado) ? 'none' : 'flex';
 });
 addEventListener('mousemove', e => {
@@ -2856,6 +3007,7 @@ if (DEBUG) {
   if (qs.get('bone')) { personalizacao[personagemId].boneEstilo = qs.get('bone'); if (qs.get('mochila')) personalizacao[personagemId].corMochila = '#' + qs.get('mochila'); escolhePersonagem(personagemId); }
   if (qs.get('emote')) aplicaEmote(jogador, qs.get('emote'), 0);
   if (qs.has('intro')) iniciaIntro(); else introFeita = true;
+  if (qs.has('caes')) { mostraCachorros(); alissonFalou = true; }
   if (qs.has('dia2')) { for (const m of missoes) m.ok = true; estado.temPederneira = true; sede.chamas.visible = true; mostraCachorros(); alissonFalou = true; phantom.estagio = 4; iniciaDia2(); if (qs.get('dia2') === 'obras') { completa('diego2'); missoes.push({ id: 'sonho', ok: true, txt: 'Falar com os 3 amigos sobre o sonho (3/3)', n: 3, falados: [] }); missoes.push({ id: 'diego3', ok: true, txt: 'Contar pro Chefe Diego que todos tiveram o mesmo sonho' }); proximoProjeto(); } }
   if (qs.has('noite2')) { for (const m of missoes) m.ok = true; estado.temPederneira = true; sede.chamas.visible = true; mostraCachorros(); alissonFalou = true; phantom.estagio = 4; iniciaDia2(); completa('diego2'); for (const id of ['mirante', 'casa', 'sede']) { const pr = PROJETOS.find(x => x.id === id); projetos.atual = pr; constroi(pr); } projetos.atual = null; PROJETOS.forEach(p => { if (!projetos.feitos.includes(p.id)) projetos.feitos.push(p.id); }); if (qs.get('noite2') === 'psiu') { iniciaAnoitecer(); setTimeout(() => { n2.historiaContada = true; iniciaNoite2(); }, 1500); } else iniciaAnoitecer(); }
   if (qs.has('sonho')) { for (const m of missoes) m.ok = true; estado.temPederneira = true; sede.chamas.visible = true; mostraCachorros(); alissonFalou = true; phantom.estagio = 4; cena = { amanhece: true, t: 2.9 }; fadeEl.style.opacity = 1; document.getElementById('hud').style.opacity = 0; }
@@ -2876,6 +3028,7 @@ if (DEBUG) {
   if (qs.get('dist')) cam.dist = +qs.get('dist');
   if (qs.has('top')) scene.fog = null;
   if (qs.get('tecla')) qs.get('tecla').split(',').forEach(k => teclas[k] = true);
+  if (qs.get('fala')) setTimeout(() => aviso(qs.get('fala') + ': "Bem-vindo, lobinho! A Akelá está esperando a alcateia na árvore do lobinhos.com, em frente à cantina, pra fazer a bandeira."', 6000), 0); if (qs.get('fala')) balaoEl.style.transition = avisoEl.style.transition = 'none';
   if (qs.has('mostrapos')) setInterval(() => { document.title = `pos ${estado.pos.x.toFixed(1)},${(-estado.pos.z).toFixed(1)}`; localEl.textContent += ` | ${estado.pos.x.toFixed(1)}, ${(-estado.pos.z).toFixed(1)}`; }, 200);
 }
 function animar() {
@@ -2913,6 +3066,7 @@ function animar() {
   }
   montaInt.x = phantom.mesh.position.x; montaInt.z = phantom.mesh.position.z;
   if (cena) atualizaCena(dt);
+  if (typeof atualizaCap2 === 'function') atualizaCap2(dt);   // capítulo 2 (cap2.js carrega depois deste arquivo)
   atualizaMini(dt); atualizaBolas(dt);
   const movendo = !!(mx || mz) && (travado || DEBUG || padJ1) && !estado.escalando && !estado.macrame && !cena && !(jogador.userData.batucando > tempo) && !escolhendoDestino && !mini;
   const nadando = naAguaRasa(estado.pos.x, estado.pos.z) && !emTerra(estado.pos.x, estado.pos.z);
@@ -2974,13 +3128,13 @@ function animar() {
   if (movendo && estado.noChao && !nadando) jogador.position.y += Math.abs(Math.sin(estado.fase)) * 0.03; // balanço suave do passo
 
   // animação de pernas/braços
-  estado.velAnim += (movendo ? (vel > 5 ? 14 : 9) : 0 - estado.velAnim) * Math.min(1, dt * 8);
+  estado.velAnim += ((movendo ? (vel > 5 ? 14 : 9) : 0) - estado.velAnim) * Math.min(1, dt * 8);
   const faseAntes = estado.fase;
   estado.fase += estado.velAnim * dt;
   if (movendo && estado.noChao && Math.floor(faseAntes / Math.PI) !== Math.floor(estado.fase / Math.PI)) SOM.passo(vel > 5, nadando);
   if (estado.escalando) estado.fase += dt * 8;
   const amp0 = estado.macrame && estado.macrame.fase !== 'tece' ? 0.6 : 0;
-  const andandoCena = !!(cena && cena.andando); if (andandoCena) estado.fase += dt * 9;
+  const andandoCena = !!(cena && cena.andando); if (andandoCena) estado.fase += dt * 3;
   const amp = (movendo || estado.escalando || andandoCena) ? 0.6 : amp0, sw = Math.sin(estado.fase) * amp;
   const u = jogador.userData;
   u.pernaE.rotation.x = sw; u.pernaD.rotation.x = -sw; u.bracoE.rotation.x = -sw; u.bracoD.rotation.x = sw;
@@ -3063,6 +3217,7 @@ function animar() {
   }
 
   if (jogador.userData.emoteAte && tempo > jogador.userData.emoteAte) aplicaEmote(jogador, 'feliz', 0);
+  animaBocas();
   atualizaNoite(dt);
   atualizaAjudantes(dt);
   atualizaSeguidores(dt);
@@ -3070,7 +3225,7 @@ function animar() {
   if (pai && !(cena && cena.intro)) { const u = pai.userData; u.bracoD.rotation.x = -1.35 + Math.sin(tempo * 1.3) * 0.03; u.bracoD.rotation.z = -0.25; u.bracoE.rotation.x = -1.1; u.bracoE.rotation.z = 0.3; if (u.celular) u.celular.rotation.z = Math.sin(tempo * 7) * 0.02; }
   // NPCs olham para o jogador
   for (const n of npcs) {
-    if (cena && (n.mesh === pai || n.mesh === outroLobinho)) continue;   // na cutscene eles andam pra frente
+    if (cena && (n.mesh === pai || n.mesh === outroLobinho || (cena.carona && cena.carona.some(c => c.mesh === n.mesh)))) continue;   // na cutscene eles andam pra frente
     if (dia2 && ajudantes.some(a => a.mesh === n.mesh && a.estado !== 'espera')) continue;
     if (n.mesh === pai) continue;
     if (n.doidinho) {
@@ -3096,6 +3251,6 @@ function animar() {
   desenhaMinimapa();
 
   renderTudo();
+  atualizaBalao();
 }
 animar();
-})();

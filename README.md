@@ -28,10 +28,22 @@ python3 -m http.server 8080
 | Shift | correr |
 | Espaço | pular |
 | Mouse | girar câmera (roda = zoom) |
-| E | interagir (falar, pegar lenha, montar barraca, hastear bandeira, acender fogueira) |
+| E | interagir (falar, pegar lenha, montar barraca, hastear bandeira, acender fogueira, continuar falas) |
+| Q | habilidade do personagem |
+| ← → | nas cenas: bater as asas do gavião, remar, soltar/recolher linha da pipa |
+| Esc | sair de um minigame |
 | M | mapa grande |
 
-## Tarefas
+## Capítulos
+Na tela inicial dá pra escolher o capítulo (cada um é um sábado da alcateia no camping):
+1. O acampamento — chegada, bandeira, fogueira, o Fantasma, a noite e o dia seguinte
+2. Uma semana depois
+3. Mais um sábado
+4. O Distrital (tema Pokémon)
+
+Os capítulos 2 a 4 ficam em `cap2.js`, `cap3.js` e `cap4.js` (carregados depois de `game.js`).
+
+## Tarefas (capítulo 1)
 1. Apresentar-se à Chefe na portaria
 2. Hastear a bandeira na sede do Grupo Escoteiro Garibaldi
 3. Montar 3 barracas da patrulha

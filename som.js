@@ -72,6 +72,7 @@ const SOM = (function () {
     fala(n) { if (!ok()) return; const t = ctx.currentTime; for (let i = 0; i < Math.min(14, n); i++) tom(260 + Math.random() * 220, 0.05, 'square', 0.03, t + i * 0.055); },
     latido() { if (!ok()) return; const t = ctx.currentTime; for (let i = 0; i < 2; i++) { tom(520, 0.09, 'sawtooth', 0.14, t + i * 0.22, 260); tom(300, 0.12, 'square', 0.06, t + i * 0.22 + 0.02, 180); } },
     uivo() { tom(380, 1.2, 'sine', 0.15, null, 620); },
+    buzina() { if (!ok()) return; const t = ctx.currentTime; tom(92, 2.2, 'sawtooth', 0.22, t, 88); tom(184, 2.2, 'square', 0.06, t, 176); tom(46, 2.2, 'sine', 0.2, t); },   // buzina de nevoeiro do Iate Clube
     grr() { if (!ok()) return; const t = ctx.currentTime; tom(120, 0.4, 'sawtooth', 0.12, t, 90); },
     aww() { tom(500, 0.5, 'sine', 0.12, null, 300); },
     uau() { tom(400, 0.3, 'sine', 0.14, null, 800); },

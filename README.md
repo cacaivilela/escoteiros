@@ -54,7 +54,7 @@ Os capítulos 2 a 4 ficam em `cap2.js`, `cap3.js` e `cap4.js` (carregados depois
 
 ## Mods e mais
 Botão 🧩 na tela inicial (embaixo de Personalizar): loja de mods (velocidade, gravidade da Lua, gigante, pôr do sol…), criador de mods
-(controles + código JS opcional, salva e baixa .json), skins prontas/criadas/importadas e o DLC Inverno na Lagoa (neve + 4 skins).
+(controles + código JS opcional, salva e baixa .json), skins prontas/criadas/importadas e o DLC Mega Camping (40 capítulos gerados, 55 minijogos, 12 bichos, 4 skins).
 Tudo fica em `localStorage` (`escoteiros.mods`); a lógica está em `mods.js`.
 
 ## Modo debug

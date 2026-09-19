@@ -215,7 +215,7 @@ function desenhaQuiz() {
   const q = cena.perguntas[cena.i], g = GINASIOS.find(x => x.id === cena.id);
   destinosEl.style.display = 'block';
   destinosEl.innerHTML = '<b>' + (g ? g.emoji + ' Quiz do ' + g.nome : '🏆 Liga do Distrital (' + (cena.i + 1) + '/' + cena.perguntas.length + ')') + '</b><div style="margin:8px 0 10px">' + q[0] + '</div>' +
-    q[1].map((o, i) => '<div class="dest' + (i === cena.sel ? ' sel' : '') + '">' + (i + 1) + '. ' + o + '</div>').join('') + '<small>↑↓ ou 1-4 escolhe · E responde</small>';
+    q[1].map((o, i) => '<div class="dest' + (i === cena.sel ? ' sel' : '') + '">' + (i + 1) + ') ' + o + '</div>').join('') + '<small>↑↓ ou 1-4 escolhe · E responde</small>';
 }
 function respondeQuiz() {
   const q = cena.perguntas[cena.i], g = GINASIOS.find(x => x.id === cena.id), quem = g ? lider(g) : 'Akelá';

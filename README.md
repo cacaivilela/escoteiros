@@ -52,6 +52,11 @@ Os capítulos 2 a 4 ficam em `cap2.js`, `cap3.js` e `cap4.js` (carregados depois
 6. Ir até a Praia do Camping
 7. Chegar ao molhe e ver o farol
 
+## Mods e mais
+Botão 🧩 na tela inicial (embaixo de Personalizar): loja de mods (velocidade, gravidade da Lua, gigante, pôr do sol…), criador de mods
+(controles + código JS opcional, salva e baixa .json), skins prontas/criadas/importadas e o DLC Inverno na Lagoa (neve + 4 skins).
+Tudo fica em `localStorage` (`escoteiros.mods`); a lógica está em `mods.js`.
+
 ## Modo debug
 `index.html?debug&pos=x,y&yaw=r&pitch=r&dist=n` pula a tela inicial e posiciona o
 jogador (coordenadas em metros, origem em -31.377612, -51.969367). `&top=400` dá

@@ -47,6 +47,16 @@
   #personalizar .quem.sel{border-color:#ffd54a;background:rgba(255,213,74,.2)}
   #personalizar{max-width:640px}
   #personalizar .reset{margin-left:10px;opacity:.7;cursor:pointer;text-decoration:underline}
+  #mods{display:none;margin-top:10px;background:rgba(0,0,0,.4);padding:10px 16px;border-radius:12px;font-size:13px;text-align:left;cursor:default;max-width:680px;max-height:46vh;overflow:auto;pointer-events:auto}
+  #mods .abas span{display:inline-block;padding:4px 12px;border:1px solid rgba(255,255,255,.35);border-radius:12px;cursor:pointer;margin:0 3px 8px 0}
+  #mods .abas span.sel{border-color:#ffd54a;background:rgba(255,213,74,.2)}
+  #mods .item{display:flex;align-items:center;gap:10px;padding:6px 8px;border:1px solid rgba(255,255,255,.2);border-radius:10px;margin:5px 0}
+  #mods .item .em{font-size:24px}#mods .item .tx{flex:1}#mods .item small{opacity:.7;display:block}
+  #mods button{background:#ffd54a;color:#222;border:0;border-radius:8px;padding:4px 10px;font-weight:bold;cursor:pointer;font-size:12px}
+  #mods button.off{background:rgba(255,255,255,.2);color:#fff}#mods button.sec{background:rgba(255,255,255,.15);color:#fff}
+  #mods label{display:inline-block;margin:4px 10px 0 0}#mods input[type=text],#mods textarea{background:rgba(0,0,0,.4);color:#fff;border:1px solid rgba(255,255,255,.3);border-radius:6px;padding:3px 6px}
+  #mods textarea{width:100%;box-sizing:border-box;font-family:monospace;font-size:12px}
+  #mods .prog{height:14px;background:#333;border-radius:7px;overflow:hidden;margin:6px 0}#mods .prog div{height:100%;background:linear-gradient(90deg,#ffd54a,#ff7a1a);width:0;transition:width .2s}
   #inicio .btn{margin-top:18px;padding:12px 28px;border:2px solid #ffd54a;border-radius:30px;font-size:18px}
   #fade{position:fixed;inset:0;background:#000;opacity:0;transition:opacity .7s;pointer-events:none;z-index:5}
   .hudJ{position:absolute;background:rgba(0,0,0,.45);padding:6px 12px;border-radius:8px;font-size:13px;border-left:4px solid #fff}
@@ -103,6 +113,8 @@
   <div class="caps">📖 Capítulo: <span class="cap sel" data-cap="1">1 — O acampamento</span><span class="cap" data-cap="2">2 — Uma semana depois</span><span class="cap" data-cap="3">3 — Mais um sábado</span><span class="cap" data-cap="4">4 — O Distrital</span></div>
   <div class="btn2" id="btnPersonalizar">🎨 Personalizar</div>
   <div id="personalizar"></div>
+  <div class="btn2" id="btnMods">🧩 Mods e mais</div>
+  <div id="mods"></div>
   <div class="btn">Clique para começar</div>
   <div class="mgs">🎮 Minigames:
     <span class="mg" data-mini="bandeira">🚩 Bandeira</span><span class="mg" data-mini="fogo">🔥 Fogueira</span><span class="mg" data-mini="martelar">🔨 Martelar</span><span class="mg" data-mini="serrar">🪚 Serrar</span><span class="mg" data-mini="amarrar">🪢 Amarrar</span><span class="mg" data-mini="pesca">🎣 Pesca</span><span class="mg" data-mini="bocha">🎯 Bocha</span><span class="mg" data-mini="futebol">⚽ Futebol</span>
@@ -134,5 +146,6 @@
 <script src="cap2.js?v=2"></script>
 <script src="cap3.js?v=2"></script>
 <script src="cap4.js?v=2"></script>
+<script src="mods.js?v=1"></script>
 </body>
 </html>

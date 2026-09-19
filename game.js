@@ -5,6 +5,7 @@
 
 // ---------- utilidades ----------
 const rnd = (a, b) => a + Math.random() * (b - a);
+const MOD = { vel: 1, pulo: 1, grav: 1, escala: 1 };   // multiplicadores dos mods (mods.js)
 const P = (x, y) => new THREE.Vector3(x, 0, -y);          // osm (x,y) -> mundo
 function pontoNoPoligono(x, y, poly) {
   let dentro = false;
@@ -3070,7 +3071,7 @@ function animar() {
   atualizaMini(dt); atualizaBolas(dt);
   const movendo = !!(mx || mz) && (travado || DEBUG || padJ1) && !estado.escalando && !estado.macrame && !cena && !(jogador.userData.batucando > tempo) && !escolhendoDestino && !mini;
   const nadando = naAguaRasa(estado.pos.x, estado.pos.z) && !emTerra(estado.pos.x, estado.pos.z);
-  const vel = (nadando ? 2.2 : (teclas.ShiftLeft || teclas.ShiftRight || (padJ1 && padJ1.correr)) ? 8.5 : 4.5) * (jogador.userData.turboAte > tempo ? 2 : 1);
+  const vel = (nadando ? 2.2 : (teclas.ShiftLeft || teclas.ShiftRight || (padJ1 && padJ1.correr)) ? 8.5 : 4.5) * (jogador.userData.turboAte > tempo ? 2 : 1) * MOD.vel;
   if (movendo) {
     const l = Math.hypot(mx, mz); mx /= l; mz /= l;
     const fx = Math.sin(cam.yaw), fz = Math.cos(cam.yaw);
@@ -3115,16 +3116,18 @@ function animar() {
     estado.vy = 0; estado.noChao = true;
   } else {
     // pulo
-    if ((teclas.Space || (padJ1 && padJ1.pular)) && estado.noChao && !nadando) { estado.vy = 6; estado.noChao = false; SOM.pulo(); }
+    if ((teclas.Space || (padJ1 && padJ1.pular)) && estado.noChao && !nadando) { estado.vy = 6 * MOD.pulo; estado.noChao = false; SOM.pulo(); }
     const pb = sobrePonte(estado.pos.x, estado.pos.z);
     const pol = estado.poleiro && Math.hypot(estado.pos.x - estado.poleiro.x, estado.pos.z - estado.poleiro.z) < estado.poleiro.r && estado.pos.y > estado.poleiro.h - 1.5 ? estado.poleiro.h : null;
     const chao = pol !== null ? pol : pb ? pb.alt : nadando ? -0.9 : (naPlataforma() ? ARV_TOPO : alt(estado.pos.x, estado.pos.z));
     if (estado.poleiro && pol === null && estado.pos.y < estado.poleiro.h - 2) { if (estado.poleiro.corda) scene.remove(estado.poleiro.corda); estado.poleiro = null; }   // caiu/desceu da copa
-    estado.vy -= 18 * dt; estado.pos.y += estado.vy * dt;
+    estado.vy -= 18 * MOD.grav * dt; estado.pos.y += estado.vy * dt;
     if (estado.pos.y <= chao) { estado.pos.y = chao; estado.vy = 0; estado.noChao = true; }
     else if (estado.pos.y > chao + 0.05) estado.noChao = false;
   }
   jogador.position.copy(estado.pos); jogador.rotation.y = estado.yaw;
+  if (jogador.scale.x !== MOD.escala) jogador.scale.setScalar(MOD.escala);
+  if (typeof atualizaMods === 'function') atualizaMods(dt);
   if (movendo && estado.noChao && !nadando) jogador.position.y += Math.abs(Math.sin(estado.fase)) * 0.03; // balanço suave do passo
 
   // animação de pernas/braços

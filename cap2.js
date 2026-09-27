@@ -31,10 +31,12 @@ function mostraContinuar() { const s = leSave(); for (const [cap, sel] of []) { 
 mostraContinuar();
 const btnCap2 = document.getElementById('btnCap2');
 let proximoCap = 2;
-btnCap2.addEventListener('click', () => { btnCap2.style.display = 'none'; capituloEscolhido = proximoCap; CAP2.continuar = null; iniciaCapitulo(); renderer.domElement.requestPointerLock(); });
-function mostraBotaoCap2() { proximoCap = 2; btnCap2.textContent = '▶ Capítulo 2 — uma semana depois'; if (!CAP2.ativo) btnCap2.style.display = 'block'; }
-function mostraBotaoCap3() { proximoCap = 3; btnCap2.textContent = '▶ Capítulo 3 — mais um sábado'; btnCap2.style.display = 'block'; }
-function mostraBotaoCap4() { proximoCap = 4; btnCap2.textContent = '▶ Capítulo 4 — o Distrital'; btnCap2.style.display = 'block'; }
+btnCap2.addEventListener('click', () => { btnCap2.style.display = 'none'; capituloEscolhido = proximoCap; CAP2.continuar = null; iniciaCapitulo(); travar(); });
+// o botão aparece com o mouse preso no jogo: solta o mouse pra dar pra clicar (fica por cima do "Pausado")
+function mostraBtnCap() { btnCap2.style.display = 'block'; if (document.pointerLockElement) document.exitPointerLock(); }
+function mostraBotaoCap2() { proximoCap = 2; btnCap2.textContent = '▶ Capítulo 2 — uma semana depois'; if (!CAP2.ativo) mostraBtnCap(); }
+function mostraBotaoCap3() { proximoCap = 3; btnCap2.textContent = '▶ Capítulo 3 — mais um sábado'; mostraBtnCap(); }
+function mostraBotaoCap4() { proximoCap = 4; btnCap2.textContent = '▶ Capítulo 4 — o Distrital'; mostraBtnCap(); }
 
 // ---------- objetos do capítulo ----------
 function elipsoide(rx, ry, rz, mat, x, y, z) { const m = new THREE.Mesh(new THREE.SphereGeometry(1, 24, 18), mat); m.scale.set(rx, ry, rz); m.position.set(x, y, z); m.castShadow = true; return m; }
@@ -103,7 +105,7 @@ function criaGaviao(x, y) {
   luzOlhos.distance = 40;
   // canteiro: círculo de terra batida com estacas em volta
   const chao = new THREE.Mesh(new THREE.CircleGeometry(14, 32), M.terra); chao.rotation.x = -Math.PI / 2; chao.position.set(x, altO(x, y) + 0.03, -y); chao.receiveShadow = true; scene.add(chao);
-  for (let i = 0; i < 16; i++) { const a = i / 16 * Math.PI * 2; const est = caixa(0.2, 1.2, 0.2, M.madeira, x + Math.cos(a) * 14, altO(x, y) + 0.6, -y + Math.sin(a) * 14); scene.add(est); }
+  for (let i = 0; i < 16; i++) { const a = i / 16 * Math.PI * 2; const ex = x + Math.cos(a) * 14, ey = y - Math.sin(a) * 14, est = caixa(0.2, 1.2, 0.2, M.madeira, ex, altO(ex, ey) + 0.6, -ey); scene.add(est); }   // cada estaca no chão dela
   scene.add(g);
   return { mesh: g, partes, asas, bicoBaixo, olhos, luzOlhos, etapa: 0, chao };
 }
@@ -136,8 +138,8 @@ function preparaSabado() {
   introFeita = true; jogoIniciado = true;
   btnCap2.style.display = 'none'; inicio.style.display = 'none';
   cena = null; mini = null; miniEl.style.display = 'none'; balao = null; balaoEl.style.opacity = 0;
-  if (noite || noite2) { noite2 = false; ligaNoite(false); capituloNoite = null; }
-  if (CAP2.noite) { ligaNoite(false); CAP2.noite = false; noite = false; lampiao.visible = false; }
+  if (noite || noite2) { noite2 = false; ligaNoite(false, true); capituloNoite = null; }
+  if (CAP2.noite) { ligaNoite(false, true); CAP2.noite = false; noite = false; lampiao.visible = false; }
   n2.fase = null; n2.seguidores = []; ajudantes.length = 0; obra = null; dia2 = true; mostraMadeira();
   fadeEl.style.opacity = 1; document.getElementById('hud').style.opacity = 0;
   jogador.visible = true; alissonFalou = true; mostraCachorros(); phantom.seguindo = false; phantom.estagio = 4;
@@ -157,7 +159,7 @@ function preparaSabado() {
   for (const o of obstaculos) if (o.npc === alisson) { o.x = ALISSON[0]; o.z = -ALISSON[1]; o.r = 0.5; }
   for (const i of interativos) if (i.npcMesh === alisson) { i.x = ALISSON[0]; i.z = -ALISSON[1]; i.r = 3; }
   // a Trailblazer e o Pai na portaria (trouxe todo mundo de novo)
-  const pc = CARRO_CAMINHO[CARRO_CAMINHO.length - 1]; carro.position.set(pc[0], altO(pc[0], pc[1]), -pc[1]); carro.rotation.y = Math.atan2(pc[0] - CARRO_CAMINHO[3][0], -pc[1] + CARRO_CAMINHO[3][1]) - Math.PI / 2;
+  const pc = CARRO_CAMINHO[CARRO_CAMINHO.length - 1]; carro.position.set(pc[0], altO(pc[0], pc[1]), -pc[1]); carro.rotation.y = Math.atan2(pc[0] - CARRO_CAMINHO[3][0], -pc[1] + CARRO_CAMINHO[3][1]) - Math.PI / 2; Object.assign(carroObst, { x: carro.position.x, z: carro.position.z, rot: carro.rotation.y });
   if (!pai) { pai = npc(pc[0] + 3, pc[1] + 2, 2.6, 'Pai', '', PAI_OPTS); aplicaEmote(pai, 'serio', 0); pai.userData.serio = true; daCelular(pai); }
   else { pai.visible = true; pai.position.set(pc[0] + 3, altO(pc[0] + 3, pc[1] + 2), -pc[1] - 2); for (const o of obstaculos) if (o.npc === pai) { o.x = pc[0] + 3; o.z = -pc[1] - 2; } }
   const ip = interativos.find(i => i.nome === 'Falar com Pai'); if (ip) { ip.x = pai.position.x; ip.z = pai.position.z; ip.r = 3; }
@@ -449,7 +451,7 @@ function iniciaNoiteCap2() {
   alisson.position.set(101, altO(101, -20), 20); alisson.rotation.y = 3.4; for (const o of obstaculos) if (o.npc === alisson) { o.x = 101; o.z = 20; }
   for (const i of interativos) if (i.npcMesh === alisson) { i.x = 101; i.z = 20; }
   CAP2.barco.mesh.position.set(C2.barco[0], 0.1, -C2.barco[1]); CAP2.barco.mesh.rotation.set(0, 0, 0);
-  ligaNoite(true); SOM.noite(true, true); noite = false; CAP2.noite = true;
+  ligaNoite(true); SOM.noite(false); SOM.noite(true, true); noite = false; CAP2.noite = true;
   lampiao.visible = true; luzPraia.intensity = 1.6;
   CAP2.fase = 'farol'; c2Missao('c2_farol', 'À noite: esperar na praia, perto da casinha do salva-vidas, e ver a luz');
   cam.yaw = Math.PI; cam.pitch = 0.2; camera.position.set(98, 3, 16);

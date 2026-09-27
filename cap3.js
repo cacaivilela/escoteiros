@@ -272,7 +272,7 @@ function cameraPipa() {
 
 // ---------- NOITE: o grito do Iate Clube ----------
 function iniciaNoiteCap3() {
-  ligaNoite(true); SOM.noite(true, true); noite = false; CAP3.noite = true;
+  ligaNoite(true); SOM.noite(false); SOM.noite(true, true); noite = false; CAP3.noite = true;
   lampiao.visible = true; luzPraia.intensity = 1.6;
   textoNoite.textContent = 'Anoiteceu. O grito veio do Iate Clube...'; textoNoite.style.opacity = 1;
   setTimeout(() => { textoNoite.style.opacity = 0; }, 3000);

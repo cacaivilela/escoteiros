@@ -102,6 +102,23 @@ const M = {
   camisaLobinho: new THREE.MeshLambertMaterial({ color: 0x2f63c4 }),
   boneAzul: new THREE.MeshLambertMaterial({ color: 0x1e4fb5 }),
 };
+// vento: copas, juncos, flores e capim balançam no shader (nada de mexer em milhares de matrizes por quadro).
+// uVento sobe de vez em quando: é o minuano batendo.
+const ventoU = { uTempo: { value: 0 }, uVento: { value: 1 } };
+function matVento(base, forca) {
+  const m = base.clone();
+  m.onBeforeCompile = sh => {
+    sh.uniforms.uTempo = ventoU.uTempo; sh.uniforms.uVento = ventoU.uVento;
+    sh.vertexShader = 'uniform float uTempo;\nuniform float uVento;\n' + sh.vertexShader.replace('#include <begin_vertex>', `#include <begin_vertex>
+      #ifdef USE_INSTANCING
+        float faseV = instanceMatrix[3][0] * 0.07 + instanceMatrix[3][2] * 0.05;
+        float balV = (sin(uTempo * 1.6 + faseV) + 0.45 * sin(uTempo * 2.9 + faseV * 1.7)) * uVento * ${forca.toFixed(4)} * max(0.0, position.y);
+        transformed.x += balV; transformed.z += balV * 0.6;
+      #endif`);
+  };
+  m.customProgramCacheKey = () => 'vento' + forca;
+  return m;
+}
 
 // obstáculos para colisão: {x,z,r} (círculos) e {x,z,hw,hd,rot} (caixas)
 const obstaculos = [];
@@ -170,14 +187,43 @@ function nivela(poly, h) { for (let j = 0; j < REL.ny; j++) for (let i = 0; i < 
 function nivelaCirculo(cx, cy, r, h) { for (let j = 0; j < REL.ny; j++) for (let i = 0; i < REL.nx; i++) { const x = REL.x0 + i * REL.passo, y = REL.y0 + j * REL.passo; const d = Math.hypot(x - cx, y - cy); if (d < r) { const k = Math.min(1, (r - d) / 6); REL.h[j * REL.nx + i] = REL.h[j * REL.nx + i] * (1 - k) + h * k; } } }
 // áreas planas: campo, quadras, construções, sede, cantina, portaria
 nivela(MAPA.campo, altO(187, 64));
-for (const [cx, cy, r] of [[-22, 8, 16], [-50, -8, 10], [-210, -138, 22], [-186, -136, 12], [-232, -136, 16], [190, 210, 16], [120, -2, 16], [-70, -70, 16], [0, -62, 12], [-40, 20, 8], [60, -6, 12], [-120, -128, 12], [-150, -150, 9], [-100, 5, 9], [300, 150, 16], [95, -17, 8], [-34, 2, 10]]) nivelaCirculo(cx, cy, r, altO(cx, cy));
+for (const [cx, cy, r] of [[-64, -22, 20], [-22, 8, 16], [-50, -8, 10], [-210, -138, 22], [-186, -136, 12], [-232, -136, 16], [190, 210, 16], [120, -2, 16], [-70, -70, 16], [0, -62, 12], [-40, 20, 8], [60, -6, 12], [-120, -128, 12], [-150, -150, 9], [-100, 5, 9], [300, 150, 16], [95, -17, 8], [-34, 2, 10]]) nivelaCirculo(cx, cy, r, altO(cx, cy));
 
+// ---------- lagoa viva: marolas (só na luz, sem mexer vértices) e espuma na beira ----------
+// a profundidade vem do próprio relevo (REL.h) numa textura; onde a água é rasa aparece a espuma indo e voltando
+const aguaU = { uTempo: { value: 0 }, uAlt: { value: null }, uRel: { value: new THREE.Vector4() } };
+function aguaViva() {
+  const n = REL.nx * REL.ny, px = new Uint8Array(n);
+  for (let k = 0; k < n; k++) px[k] = Math.max(0, Math.min(255, Math.round((REL.h[k] + 3) / 6 * 255)));   // -3..3 m
+  const tex = new THREE.DataTexture(px, REL.nx, REL.ny, THREE.LuminanceFormat, THREE.UnsignedByteType);
+  tex.magFilter = tex.minFilter = THREE.LinearFilter; tex.needsUpdate = true;
+  aguaU.uAlt.value = tex; aguaU.uRel.value.set(REL.x0, REL.y0, REL.x1 - REL.x0, REL.y1 - REL.y0);
+  M.agua.onBeforeCompile = sh => {
+    Object.assign(sh.uniforms, aguaU);
+    sh.vertexShader = 'varying vec3 vMundo;\n' + sh.vertexShader.replace('#include <begin_vertex>', '#include <begin_vertex>\n vMundo = (modelMatrix * vec4(transformed, 1.0)).xyz;');
+    sh.fragmentShader = 'varying vec3 vMundo;\nuniform float uTempo;\nuniform sampler2D uAlt;\nuniform vec4 uRel;\n' + sh.fragmentShader
+      .replace('#include <color_fragment>', `#include <color_fragment>
+        vec2 uvA = vec2((vMundo.x - uRel.x) / uRel.z, (-vMundo.z - uRel.y) / uRel.w);
+        float hA = texture2D(uAlt, uvA).r * 6.0 - 3.0;
+        float prof = (uvA.x < 0.0 || uvA.x > 1.0 || uvA.y < 0.0 || uvA.y > 1.0) ? 9.0 : -0.45 - hA;
+        float espuma = smoothstep(0.32, 0.02, prof) * step(-0.02, prof) * step(abs(vMundo.y + 0.45), 0.05);
+        espuma *= 0.55 + 0.45 * sin(uTempo * 1.6 - prof * 22.0);
+        diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.93, 0.95, 0.97), clamp(espuma, 0.0, 1.0) * 0.85);`)
+      .replace('#include <normal_fragment_begin>', `#include <normal_fragment_begin>
+        { vec2 w = vMundo.xz; float t = uTempo;
+          float dx = cos(w.x * 0.21 + t * 1.1) * 0.06 + cos((w.x + w.y) * 0.37 - t * 1.7) * 0.04 + cos(w.x * 0.9 + t * 2.3) * 0.015;
+          float dz = cos(w.y * 0.19 - t * 0.9) * 0.06 + cos((w.x - w.y) * 0.33 + t * 1.3) * 0.04 + cos(w.y * 1.1 - t * 2.1) * 0.015;
+          normal = normalize((viewMatrix * vec4(normalize(vec3(dx, 1.0, dz)), 0.0)).xyz); }`);
+  };
+  M.agua.needsUpdate = true;
+}
 // ---------- terreno ----------
 function terreno() {
   // água (Lagoa dos Patos + Arroio)
   const agua = new THREE.Mesh(new THREE.PlaneGeometry(3000, 3000, 1, 1), M.agua);
   agua.rotation.x = -Math.PI / 2; agua.position.y = -0.45;
   scene.add(agua);
+  aguaViva();
 
   // continente distante (plano)
   const gc = new THREE.ExtrudeGeometry(shapeDe(MAPA.continente), { depth: 0.7, bevelEnabled: false });
@@ -197,7 +243,7 @@ function terreno() {
     pos.setZ(k, h);
     let c;
     if (h < 0) c = cFundo;
-    else if (pontoNoPoligono(px, py, MAPA.praia)) c = cAreia;
+    else if (pontoNoPoligono(px, py, MAPA.praia)) c = h < 0.35 ? tmp.copy(cAreia).multiplyScalar(0.72 + h * 0.8) : cAreia;   // areia molhada na beira
     else if (pontoNoPoligono(px, py, MAPA.campo)) c = cCampo;
     else { const dr = distEstradas(px, py); c = dr < 2.6 ? cTerra : dr < 3.6 ? tmp.copy(cTerra).lerp(cGrama, (dr - 2.6)) : tmp.copy(cGrama).lerp(cGrama2, Math.min(1, h / 2.5)); }
     c = c.clone();
@@ -213,9 +259,15 @@ function terreno() {
   for (const e of MAPA.ruas) {
     for (let i = 0; i < e.length - 1; i++) {
       const a = P(e[i][0], e[i][1]), b = P(e[i + 1][0], e[i + 1][1]);
-      const len = a.distanceTo(b), seg = new THREE.Mesh(new THREE.PlaneGeometry(len + 4, 7), M.concreto);
-      seg.rotation.x = -Math.PI / 2; seg.position.copy(a).add(b).multiplyScalar(0.5); seg.position.y = alt(seg.position.x, seg.position.z) + 0.04; seg.rotation.z = -Math.atan2(b.z - a.z, b.x - a.x);
-      scene.add(seg);
+      // cada vértice colado no relevo (um plano reto na altura do meio flutuava até 1,5 m ou sumia no morro)
+      const len = a.distanceTo(b), geo = new THREE.PlaneGeometry(len + 4, 7, Math.max(1, Math.ceil((len + 4) / 2)), 3); geo.rotateX(-Math.PI / 2);
+      const ang = Math.atan2(b.z - a.z, b.x - a.x), c = Math.cos(ang), sn = Math.sin(ang), mx = (a.x + b.x) / 2, mz = (a.z + b.z) / 2, pos = geo.attributes.position;
+      for (let k = 0; k < pos.count; k++) {
+        const lx = pos.getX(k), lz = pos.getZ(k), wx = mx + lx * c - lz * sn, wz = mz + lx * sn + lz * c, dentro = wx > REL.x0 && wx < REL.x1 && -wz > REL.y0 && -wz < REL.y1;
+        pos.setXYZ(k, wx, dentro ? alt(wx, wz) + 0.05 : 0, wz);   // fora do relevo o continente é plano
+      }
+      geo.computeVertexNormals();
+      const seg = new THREE.Mesh(geo, M.concreto); seg.receiveShadow = true; scene.add(seg);
     }
   }
 }
@@ -240,10 +292,13 @@ function vegetacao() {
   bloqueia(-37, 4, 17);                                  // árvore do lobinhos.com, roda da alcateia e Alisson
   bloqueia(-64, -22, 19); bloqueia(-80, 0, 6);           // canteiro do gavião e pedra da cobra (capítulo 2)
 
+  // figueira (copa larga de várias bolotas), eucalipto (alto, tronco claro, verde-azulado), butiá e maricá (baixo, espinhento, flor branca)
+  const matEucalipto = new THREE.MeshLambertMaterial({ color: 0x6f9a7c }), matMarica = new THREE.MeshLambertMaterial({ color: 0x3d6e2f });
   const tipos = [
-    { n: 0, tronco: [0.35, 0.55, 5.5], copa: 'esfera', copaR: 6.5, copaY: 7.5, mat: M.copa, seq: [] },   // figueira
-    { n: 1, tronco: [0.22, 0.32, 7.5], copa: 'cone', copaR: 2.6, copaY: 9.5, mat: M.copa2, seq: [] },   // corticeira/eucalipto
-    { n: 2, tronco: [0.18, 0.25, 5], copa: 'palmeira', copaR: 2.4, copaY: 5.2, mat: M.palmeira, seq: [] }, // butiá
+    { n: 0, tronco: [0.4, 0.65, 4.8], trMat: M.tronco, mat: matVento(M.copa, 0.012), bolas: [[0, 7.2, 0, 4.6, 0.72], [3.6, 6.4, 1.2, 3.6, 0.7], [-3.4, 6.6, -1.1, 3.7, 0.7], [0.6, 6.2, -3.4, 3.4, 0.7], [-0.8, 6.3, 3.3, 3.3, 0.7]] },
+    { n: 1, tronco: [0.22, 0.34, 11], trMat: new THREE.MeshLambertMaterial({ color: 0xc8b89c }), mat: matVento(matEucalipto, 0.016), bolas: [[0, 12.4, 0, 2.3, 1.9], [0.9, 9.8, 0.4, 1.7, 1.4]] },
+    { n: 2, tronco: [0.18, 0.25, 5], trMat: M.tronco, mat: matVento(M.palmeira, 0.02), palmeira: true },
+    { n: 3, tronco: [0.12, 0.18, 2.2], trMat: M.tronco, mat: matVento(matMarica, 0.03), bolas: [[0, 2.6, 0, 1.7, 0.7], [0.9, 2.2, 0.5, 1.1, 0.8]], flores: true },
   ];
   const posicoes = [];
   const tenta = (poly, qtd, minDist, chanceTipo) => {
@@ -256,43 +311,48 @@ function vegetacao() {
       if (pontoNoPoligono(x, y, MAPA.praia) || pontoNoPoligono(x, y, MAPA.campo)) continue;
       if (distEstradas(x, y) < 5.5 || !livre(x, y)) continue;
       if (posicoes.some(p => Math.hypot(p.x - x, p.y - y) < minDist)) continue;
-      const r = Math.random();
-      const t = r < chanceTipo[0] ? 0 : r < chanceTipo[0] + chanceTipo[1] ? 1 : 2;
+      let r = Math.random(), t = 0; while (t < chanceTipo.length - 1 && r >= chanceTipo[t]) r -= chanceTipo[t++];
       posicoes.push({ x, y, t, s: rnd(0.75, 1.3), rot: rnd(0, 6.28) });
       n++;
     }
   };
-  tenta(MAPA.camping, 520, 6.5, [0.45, 0.35, 0.2]);
-  tenta(MAPA.iate, 60, 9, [0.5, 0.3, 0.2]);
-  tenta(MAPA.continente, 900, 9, [0.5, 0.4, 0.1]);
+  tenta(MAPA.camping, 520, 6.5, [0.4, 0.22, 0.16, 0.22]);
+  tenta(MAPA.iate, 60, 9, [0.45, 0.25, 0.15, 0.15]);
+  tenta(MAPA.continente, 900, 9, [0.45, 0.4, 0.05, 0.1]);
 
+  const dv = new THREE.Object3D(), corV = new THREE.Color(), pF = new THREE.Vector3();
+  const tinge = (k, verde) => corV.setRGB(k * rnd(0.88, 1.06), k, k * rnd(verde ? 0.85 : 0.95, 1.05));   // cada árvore num tom
   for (const tp of tipos) {
     const lista = posicoes.filter(p => p.t === tp.n);
     if (!lista.length) continue;
     const gT = new THREE.CylinderGeometry(tp.tronco[0], tp.tronco[1], tp.tronco[2], 7);
     gT.translate(0, tp.tronco[2] / 2, 0);
-    let gC;
-    if (tp.copa === 'esfera') { gC = new THREE.SphereGeometry(tp.copaR, 9, 7); gC.scale(1, 0.7, 1); }
-    else if (tp.copa === 'cone') gC = new THREE.ConeGeometry(tp.copaR, 7, 8);
-    else { gC = new THREE.SphereGeometry(tp.copaR, 6, 4); gC.scale(1.3, 0.35, 1.3); }
-    gC.translate(0, tp.copaY, 0);
-    const iT = new THREE.InstancedMesh(gT, M.tronco, lista.length);
-    const iC = new THREE.InstancedMesh(gC, tp.mat, lista.length);
-    iT.castShadow = iC.castShadow = true; iC.receiveShadow = true;
-    const d = new THREE.Object3D();
+    const copas = [];
+    if (tp.palmeira) { const g = new THREE.SphereGeometry(2.4, 6, 4); g.scale(1.3, 0.35, 1.3); g.translate(0, 5.2, 0); copas.push(g); }
+    else for (const [bx, by, bz, br, sy] of tp.bolas) { const g = new THREE.SphereGeometry(br, 9, 7); g.scale(1, sy, 1); g.translate(bx, by, bz); copas.push(g); }
+    const iT = new THREE.InstancedMesh(gT, tp.trMat, lista.length); iT.castShadow = true;
+    const iCs = copas.map(g => { const m = new THREE.InstancedMesh(g, tp.mat, lista.length); m.castShadow = m.receiveShadow = true; return m; });
+    const iF = tp.flores ? new THREE.InstancedMesh(new THREE.SphereGeometry(0.13, 5, 4), new THREE.MeshLambertMaterial({ color: 0xfbfbf2, emissive: 0x222222 }), lista.length * 8) : null;
+    let nf = 0;
     lista.forEach((p, i) => {
-      d.position.set(p.x, altO(p.x, p.y) - 0.15, -p.y); d.rotation.set(0, p.rot, 0); d.scale.setScalar(p.s);
-      d.updateMatrix();
-      iT.setMatrixAt(i, d.matrix); iC.setMatrixAt(i, d.matrix);
-      obstaculos.push({ x: p.x, z: -p.y, r: tp.tronco[1] * p.s + 0.25 });
+      dv.position.set(p.x, altO(p.x, p.y) - 0.15, -p.y); dv.rotation.set(0, p.rot, 0); dv.scale.setScalar(p.s);
+      dv.updateMatrix();
+      iT.setMatrixAt(i, dv.matrix);
+      tinge(rnd(0.85, 1.15), true); iCs.forEach(m => { m.setMatrixAt(i, dv.matrix); m.setColorAt(i, corV); });
+      if (iF) for (let k = 0; k < 8; k++) {   // florzinhas brancas espalhadas na copa do maricá
+        const [bx, by, bz, br, sy] = tp.bolas[k % tp.bolas.length], a = rnd(0, 6.28), e = rnd(-0.2, 1.2);
+        pF.set(bx + Math.cos(a) * Math.cos(e) * br, by + Math.sin(e) * br * sy, bz + Math.sin(a) * Math.cos(e) * br).applyMatrix4(dv.matrix);
+        const mf = new THREE.Matrix4().makeTranslation(pF.x, pF.y, pF.z); iF.setMatrixAt(nf++, mf);
+      }
+      obstaculos.push({ x: p.x, z: -p.y, r: tp.flores ? 0.5 : tp.tronco[1] * p.s + 0.25 });
       arvores.push({ x: p.x, y: p.y, h: tp.tronco[2] * p.s, r: tp.tronco[1] * p.s });
     });
-    scene.add(iT); scene.add(iC);
+    scene.add(iT); iCs.forEach(m => scene.add(m)); if (iF) { iF.count = nf; scene.add(iF); }
   }
 
   // arbustos
   const gA = new THREE.SphereGeometry(1, 6, 5); gA.scale(1, 0.6, 1); gA.translate(0, 0.5, 0);
-  const arb = new THREE.InstancedMesh(gA, M.copa2, 350);
+  const arb = new THREE.InstancedMesh(gA, matVento(M.copa2, 0.04), 350);
   const d = new THREE.Object3D();
   let i = 0, guard = 0;
   while (i < 350 && guard++ < 20000) {
@@ -303,6 +363,42 @@ function vegetacao() {
   }
   arb.count = i;
   scene.add(arb);
+
+  // juncos em touceiras na beira da lagoa (fora da praia)
+  const gJ = new THREE.ConeGeometry(0.045, 1.5, 4); gJ.translate(0, 0.75, 0);
+  const junco = new THREE.InstancedMesh(gJ, matVento(new THREE.MeshLambertMaterial({ color: 0x86a84e }), 0.09), 1500);
+  let nj = 0, touceiras = 0; guard = 0;
+  while (touceiras < 150 && nj < 1480 && guard++ < 40000) {
+    const x = rnd(REL.x0, REL.x1), y = rnd(REL.y0, REL.y1);
+    if (!pontoNoPoligono(x, y, MAPA.camping) && !pontoNoPoligono(x, y, MAPA.iate)) continue;
+    if (pontoNoPoligono(x, y, MAPA.praia) || !livre(x, y) || distEstradas(x, y) < 4 || distMargem(x, y) > 3) continue;
+    touceiras++;
+    for (let k = 6 + Math.floor(rnd(0, 7)); k > 0 && nj < 1480; k--) {
+      const jx = x + rnd(-0.9, 0.9), jy = y + rnd(-0.9, 0.9);
+      dv.position.set(jx, altO(jx, jy) - 0.1, -jy); dv.rotation.set(rnd(-0.18, 0.18), rnd(0, 6), rnd(-0.18, 0.18)); dv.scale.set(1, rnd(0.7, 1.4), 1); dv.updateMatrix();
+      junco.setMatrixAt(nj, dv.matrix); junco.setColorAt(nj, corV.setRGB(rnd(0.75, 1.1), rnd(0.85, 1.05), rnd(0.6, 0.9))); nj++;
+    }
+  }
+  junco.count = nj; scene.add(junco);
+
+  // flores e tufos de capim no gramado
+  const gFl = new THREE.SphereGeometry(0.1, 5, 4); gFl.translate(0, 0.2, 0);
+  const gCa = new THREE.ConeGeometry(0.16, 0.5, 5); gCa.translate(0, 0.22, 0);
+  const flores = new THREE.InstancedMesh(gFl, matVento(new THREE.MeshLambertMaterial({ color: 0xffffff }), 0.05), 1600);
+  const capim = new THREE.InstancedMesh(gCa, matVento(new THREE.MeshLambertMaterial({ color: 0x5f9a38 }), 0.12), 2600);
+  const PALETA = [0xffd23f, 0xffd23f, 0xb07bd8, 0xffffff, 0xff7a7a, 0xffa94d];
+  const semeia = (im, max, cor) => {
+    let n = 0, g = 0;
+    while (n < max && g++ < max * 12) {
+      const x = rnd(-300, 290), y = rnd(-200, 220);
+      if (!pontoNoPoligono(x, y, MAPA.camping) || pontoNoPoligono(x, y, MAPA.praia) || pontoNoPoligono(x, y, MAPA.campo) || distEstradas(x, y) < 3 || !livre(x, y)) continue;
+      dv.position.set(x, altO(x, y) - 0.03, -y); dv.rotation.set(0, rnd(0, 6), 0); dv.scale.setScalar(rnd(0.7, 1.3)); dv.updateMatrix();
+      im.setMatrixAt(n, dv.matrix); im.setColorAt(n, cor()); n++;
+    }
+    im.count = n; scene.add(im);
+  };
+  semeia(flores, 1600, () => corV.setHex(PALETA[Math.floor(rnd(0, PALETA.length))]));
+  semeia(capim, 2600, () => corV.setRGB(rnd(0.8, 1.1), rnd(0.9, 1.1), rnd(0.7, 1)));
 }
 
 // ---------- construções ----------
@@ -522,7 +618,7 @@ function quadraBocha(x, y, rot) {
   for (let i = 0; i < 6; i++) { const b = new THREE.Mesh(new THREE.SphereGeometry(0.18, 8, 6), i % 2 ? M.vermelho : M.azul); b.position.set(rnd(-10, 10), 0.22, rnd(-1.5, 1.5)); g.add(b); }
   scene.add(g);
   placaLivre('Cancha de Bocha', x, y + 4.5, 5, rot);
-  bloqueiaCaixa(x, y, 24.4, 0.3, rot);
+  bloqueiaCaixa(x, y, 24.4, 4.4, rot); obstaculos[obstaculos.length - 1].h = 0.4;   // a cancha inteira (antes era uma parede invisível fina no meio e as bordas não batiam)
 }
 function campoFutebol() {
   const c = MAPA.campo;
@@ -638,7 +734,7 @@ function mobiliario() {
   tendas.forEach((t, i) => barraca(t[0], t[1], rnd(0, 6), [M.lona, M.lona2, M.lona3][i % 3], rnd(0.9, 1.3)));
   // chuveiros
   for (const p of [[32, -22], [-82, -100], [150, 20], [-60, -150]]) {
-    const g = new THREE.Group(); g.position.set(p[0], 0, -p[1]);
+    const g = new THREE.Group(); g.position.set(p[0], altO(p[0], p[1]), -p[1]);   // em 0 ficavam enterrados até 2 m
     g.add(caixa(1.4, 0.15, 1.4, M.concreto, 0, 0.07, 0)); g.add(caixa(0.1, 2.6, 0.1, M.metal, 0, 1.3, 0)); g.add(caixa(0.4, 0.08, 0.4, M.metal, 0.2, 2.5, 0));
     scene.add(g); obstaculos.push({ x: p[0], z: -p[1], r: 0.2 });
     placaLivre('Chuveiro', p[0] + 2, p[1], 2.2, 0);
@@ -745,12 +841,14 @@ function escoteiro(opts) {
   const camisa = opts.corCamisa ? new THREE.MeshLambertMaterial({ color: opts.corCamisa }) : (opts.camisa || (lobinho ? M.camisaLobinho : M.camisa));
   const corShortMat = opts.corShort ? new THREE.MeshLambertMaterial({ color: opts.corShort }) : null;
   const corTenisMat = opts.corTenis ? new THREE.MeshLambertMaterial({ color: opts.corTenis }) : M.branco;
-  const corLenco = opts.lenco || (lobinho ? M.lencoAzul : M.lenco);
+  const corLenco = opts.corLenco ? new THREE.MeshLambertMaterial({ color: opts.corLenco }) : (opts.lenco || (lobinho ? M.lencoAzul : M.lenco));
+  const pele = opts.corPele ? new THREE.MeshLambertMaterial({ color: opts.corPele }) : M.pele;
+  const calca = opts.corCalca ? new THREE.MeshLambertMaterial({ color: opts.corCalca }) : opts.calca;   // calça comprida (adultos)
   const corMeia = lobinho ? M.lencoAzul : M.lenco;
 
   // pernas (pivô no quadril, y=0.62) com meia e tênis
   const perna = (sx) => {
-    const p = new THREE.Mesh(new THREE.CylinderGeometry(0.09, 0.095, 0.56, 10), M.pele);
+    const p = new THREE.Mesh(new THREE.CylinderGeometry(0.09, 0.095, 0.56, 10), pele);
     p.geometry.translate(0, -0.28, 0); p.position.set(sx * 0.12, 0.62, 0);
     const meia = new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.1, 0.12, 10), corMeia); meia.position.y = -0.46; p.add(meia);
     const tenis = new THREE.Mesh(new THREE.SphereGeometry(0.115, 10, 8), corTenisMat); tenis.scale.set(1, 0.6, 1.45); tenis.position.set(0, -0.58, 0.03); p.add(tenis);
@@ -758,24 +856,25 @@ function escoteiro(opts) {
   };
   const pernaE = perna(-1), pernaD = perna(1);
   // short e tronco
-  const bermuda = new THREE.Mesh(new THREE.CylinderGeometry(0.25, 0.26, 0.28, 14), corShortMat || opts.calca || (lobinho ? M.sarja : M.bermuda)); bermuda.scale.z = 0.78; bermuda.position.y = 0.7;
-  if (opts.calca) { pernaE.material = opts.calca; pernaD.material = opts.calca; }   // calça comprida
+  const bermuda = new THREE.Mesh(new THREE.CylinderGeometry(0.25, 0.26, 0.28, 14), corShortMat || calca || (lobinho ? M.sarja : M.bermuda)); bermuda.scale.z = 0.78; bermuda.position.y = 0.7;
+  if (calca) { pernaE.material = calca; pernaD.material = calca; }
   const tronco = new THREE.Mesh(new THREE.CylinderGeometry(0.24, 0.26, 0.56, 14), camisa); tronco.scale.z = 0.8; tronco.position.y = 1.1;
   const ombros = new THREE.Mesh(new THREE.SphereGeometry(0.25, 14, 10), camisa); ombros.scale.set(1, 0.45, 0.8); ombros.position.y = 1.38;
   if (opts.gordo) { tronco.scale.set(1.2, 1, 0.95); ombros.scale.set(1.15, 0.45, 0.85); }   // tórax um pouco mais largo
   // braços (pivô no ombro), manga curta + mão
   const braco = (sx) => {
-    const b = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.055, 0.5, 8), M.pele);
+    const b = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.055, 0.5, 8), pele);
     b.geometry.translate(0, -0.25, 0); b.position.set(sx * 0.31, 1.34, 0); b.rotation.z = -sx * 0.12;
     const manga = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.075, 0.18, 8), camisa); manga.position.y = -0.08; b.add(manga);
-    const mao = new THREE.Mesh(new THREE.SphereGeometry(0.07, 8, 8), M.pele); mao.position.y = -0.5; b.add(mao);
+    const mao = new THREE.Mesh(new THREE.SphereGeometry(0.07, 8, 8), pele); mao.position.y = -0.5; b.add(mao);
     return b;
   };
   const bracoE = braco(-1), bracoD = braco(1);
   if (opts.gordo) { for (const [b, sx] of [[bracoE, -1], [bracoD, 1]]) { b.position.x = sx * 0.35; b.rotation.z = sx * 0.12; } }   // braços afastados do corpo
   // lenço
   const rolo = new THREE.Mesh(new THREE.TorusGeometry(0.19, 0.045, 8, 16), corLenco); rolo.rotation.x = Math.PI / 2; rolo.position.y = 1.42;
-  const lenco = new THREE.Mesh(new THREE.ConeGeometry(0.2, 0.36, 3), corLenco); lenco.rotation.x = Math.PI; lenco.rotation.y = Math.PI / 6; lenco.position.set(0, 1.26, 0.19);
+  const lenco = new THREE.Mesh(new THREE.ConeGeometry(0.2, 0.36, 3), corLenco); lenco.rotation.x = Math.PI; lenco.rotation.y = Math.PI / 6; lenco.position.set(0, -0.16, 0.02);
+  const pivoLenco = new THREE.Group(); pivoLenco.position.set(0, 1.42, 0.17); pivoLenco.add(lenco);   // pivô no pescoço: o lenço balança correndo
   if (opts.moletom) {   // moletom: sem lenço, capuz caído nas costas, bolso canguru, mangas compridas
     rolo.visible = lenco.visible = false;
     const capuz = new THREE.Mesh(new THREE.SphereGeometry(0.2, 12, 8, 0, Math.PI * 2, 0, Math.PI * 0.6), camisa); capuz.position.set(0, 1.36, -0.2); capuz.rotation.x = -1.2; g.add(capuz);
@@ -785,7 +884,7 @@ function escoteiro(opts) {
   if (lobinho) { const borda = new THREE.Mesh(new THREE.ConeGeometry(0.245, 0.42, 3), M.amarelo); borda.rotation.x = Math.PI; borda.rotation.y = Math.PI / 6; borda.position.set(0, 1.25, 0.17); g.add(borda); }
   // cabeça
   const R = 0.3;
-  const cabeca = new THREE.Mesh(new THREE.SphereGeometry(R, 18, 14), M.pele); cabeca.scale.set(1, 0.96, 0.96); cabeca.position.y = 1.72;
+  const cabeca = new THREE.Mesh(new THREE.SphereGeometry(R, 18, 14), pele); cabeca.scale.set(1, 0.96, 0.96); cabeca.position.y = 1.72;
   const olho = (sx) => {
     // olhos redondinhos, mais baixos (longe da aba do boné, pra não parecer franzido)
     const o = new THREE.Group(); o.position.set(sx * 0.115, 1.7, 0.285);
@@ -818,7 +917,7 @@ function escoteiro(opts) {
     // cabelo comprido caindo nas costas e nos lados
     const costas = new THREE.Mesh(new THREE.CylinderGeometry(0.27, 0.22, 0.75, 14, 1, false, Math.PI * 0.55, Math.PI * 0.9), corCabelo); costas.position.set(0, 1.45, -0.02); cabelo.add(costas);
     for (const sx of [-1, 1]) { const mecha = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.05, 0.62, 8), corCabelo); mecha.position.set(sx * 0.27, 1.5, 0.12); cabelo.add(mecha); }
-    const franja = new THREE.Mesh(new THREE.SphereGeometry(R + 0.015, 16, 8, 0, Math.PI * 2, 0, Math.PI * 0.22), corCabelo); franja.position.y = 1.8; franja.rotation.x = 0.2; cabelo.add(franja);
+    const franja = new THREE.Mesh(new THREE.SphereGeometry(R + 0.015, 16, 8, 0, Math.PI * 2, 0, Math.PI * 0.22), corCabelo); franja.position.y = 1.76; franja.scale.set(1, 0.9, 1); franja.rotation.x = 0.2; cabelo.add(franja);   // mais baixa: atravessava a copa do boné
   } else if (opts.estiloCabelo === 'rabo') {
     const rabo = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.04, 0.6, 8), corCabelo); rabo.position.set(0, 1.5, -0.3); rabo.rotation.x = 0.25; cabelo.add(rabo);
     const el = new THREE.Mesh(new THREE.TorusGeometry(0.075, 0.02, 6, 10), new THREE.MeshLambertMaterial({ color: opts.corLaco || 0xffd54a })); el.position.set(0, 1.78, -0.27); el.rotation.x = 0.4; cabelo.add(el);
@@ -883,7 +982,7 @@ function escoteiro(opts) {
     chapeu.position.y = 1.75;
     const copa = new THREE.Mesh(new THREE.SphereGeometry(R + 0.03, 18, 10, 0, Math.PI * 2, 0, Math.PI / 2.6), M.boneAzul); copa.scale.set(1, 0.9, 0.97); copa.position.y = 0.03; chapeu.add(copa);
     const pala = new THREE.Mesh(new THREE.CylinderGeometry(0.36, 0.36, 0.03, 16, 1, false, -Math.PI / 3.2, Math.PI / 1.6), M.boneAzul); pala.position.set(0, 0.2, 0.08); pala.rotation.x = 0.12; chapeu.add(pala);
-    const cara = new THREE.Mesh(new THREE.PlaneGeometry(0.19, 0.19), matLobo); cara.position.set(0, 0.2, 0.27); cara.rotation.x = -0.55; chapeu.add(cara);
+    const cara = new THREE.Mesh(new THREE.PlaneGeometry(0.15, 0.15), matLobo); cara.position.set(0, 0.275, 0.215); cara.rotation.x = -0.8; chapeu.add(cara);   // acima da aba (na altura dela o lobo saía cortado)
   } else if (opts.touca) {
     // touquinha militar preta, justa na cabeça, com a dobra na borda
     const oliva = new THREE.MeshLambertMaterial({ color: 0x1a1a1a });   // touca preta
@@ -900,22 +999,23 @@ function escoteiro(opts) {
   const bolso = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.16, 0.05), M.amarelo); bolso.position.set(0, 1.02, -0.39);
   if (opts.moletom) mochila.visible = bolso.visible = false;
   const bochechas = opts.semBochecha ? [] : [bochecha(-1), bochecha(1)];
-  g.add(pernaE, pernaD, bermuda, tronco, ombros, bracoE, bracoD, rolo, lenco, cabeca, olhoE, olhoD, boca, ...bochechas, cabelo, chapeu, mochila, bolso);
+  g.add(pernaE, pernaD, bermuda, tronco, ombros, bracoE, bracoD, rolo, pivoLenco, cabeca, olhoE, olhoD, boca, ...bochechas, cabelo, chapeu, mochila, bolso);
   // bolsa transversal (alça do ombro esquerdo até o quadril direito)
   if (opts.bolsa) {
     const corBolsa = new THREE.MeshLambertMaterial({ color: opts.corBolsa || 0xf4f4f4 });
     const alca = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.02, 0.78, 6), corBolsa); alca.position.set(0.06, 1.12, 0.23); alca.rotation.z = 0.62; g.add(alca);
     const alca2 = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.02, 0.78, 6), corBolsa); alca2.position.set(0.06, 1.12, -0.23); alca2.rotation.z = 0.62; g.add(alca2);
-    const bolsa = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.2, 0.26), corBolsa); bolsa.position.set(0.32, 0.78, 0.02); g.add(bolsa);
-    const tampa = new THREE.Mesh(new THREE.BoxGeometry(0.17, 0.1, 0.27), new THREE.MeshLambertMaterial({ color: 0xe6e6e6 })); tampa.position.set(0.32, 0.84, 0.02); g.add(tampa);
-    const fecho = new THREE.Mesh(new THREE.SphereGeometry(0.02, 6, 6), M.amarelo); fecho.position.set(0.41, 0.8, 0.02); g.add(fecho);
+    const bolsa = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.2, 0.26), corBolsa); bolsa.position.set(0.32, 0.78, 0.2); g.add(bolsa);   // mais pra frente: a mão direita ficava dentro da bolsa
+    const tampa = new THREE.Mesh(new THREE.BoxGeometry(0.17, 0.1, 0.27), new THREE.MeshLambertMaterial({ color: 0xe6e6e6 })); tampa.position.set(0.32, 0.84, 0.2); g.add(tampa);
+    const fecho = new THREE.Mesh(new THREE.SphereGeometry(0.02, 6, 6), M.amarelo); fecho.position.set(0.41, 0.8, 0.2); g.add(fecho);
   }
   g.traverse(o => { if (o.isMesh) o.castShadow = true; });
+  if (g.userData.aura) g.userData.aura.castShadow = false;   // a aura fazia uma sombra de ovo gigante
   chapeu.traverse(o => { if (o.isMesh) o.castShadow = false; });
   cabelo.traverse(o => { if (o.isMesh) o.castShadow = false; });
-  g.scale.setScalar(s);
+  g.scale.setScalar(s); g.userData.escala = s;
   suaviza(g);
-  g.userData = Object.assign(g.userData || {}, { pernaE, pernaD, bracoE, bracoD, olhos: [olhoE, olhoD], sobs, boca, emote: 'feliz', emoteAte: 0, falandoAte: 0 });
+  g.userData = Object.assign(g.userData || {}, { pernaE, pernaD, bracoE, bracoD, lenco: pivoLenco, olhos: [olhoE, olhoD], sobs, boca, emote: 'feliz', emoteAte: 0, falandoAte: 0 });
   bonecos.push(g);
   return g;
 }
@@ -1043,7 +1143,7 @@ quadraVolei(120, -2, 0.3);
 quadraBocha(-70, -70, 0.2);
 playground(0, -62);
 placaLivre('Playground', -10, -52, 3.5, 0);
-const ARV_BAND = [-34, 2];   // em frente à cantina
+const ARV_BAND = DADOS.cap1Lugares.arvoreDaBandeira;   // em frente à cantina
 const ARV_BASE = altO(-34, 2);
 const ARV_TOPO = 4.1 + ARV_BASE;        // altura da forquilha dos galhos (absoluta)
 const ARV_GALHOS = [0.4, 1.9, 3.1, 4.6];   // direção (rad) dos galhos grossos
@@ -1062,17 +1162,15 @@ placaLivre('Árvore do lobinhos.com', ARV_BAND[0] - 7, ARV_BAND[1] - 4, 5, 0.4);
 placaLivre('batizada pela alcateia', ARV_BAND[0] - 7, ARV_BAND[1] - 4, 3.4, 0.4, 1.55);
 escadaBambu();
 mobiliario();
-const SALVA = [95, -17];
+const SALVA = DADOS.cap1Lugares.casinhaDoSalvaVidas;
 const salva = casinhaSalvaVidas(SALVA[0], SALVA[1], Math.PI);
 iateClube();
 
 // ---------- jogador ----------
-const PERSONAGENS = {
-  lara: { nome: 'Lara', opts: { bone: true, escala: 0.84, estiloCabelo: 'longo', cabelo: new THREE.MeshLambertMaterial({ color: 0x141414 }), sensor: true, bolsa: true } },
-  caio: { nome: 'Caio', opts: { bone: true, escala: 0.9, estiloCabelo: 'cacheado', cabelo: new THREE.MeshLambertMaterial({ color: 0x141414 }), baquetas: true } },
-};
-PERSONAGENS.dudu = { nome: 'Dudu', opts: { bone: true, escala: 0.85, cabelo: new THREE.MeshLambertMaterial({ color: 0xe8c95a }), oculos: true }, npc: 'Lobinho Dudu' };
-PERSONAGENS.maria = { nome: 'Maria', opts: { bone: true, escala: 0.84, estiloCabelo: 'longo', cabelo: new THREE.MeshLambertMaterial({ color: 0x5a3a1e }) }, npc: 'Lobinha Maria' };
+// fichas de todo mundo (dados/personagens.js): um modelo base + uma ficha por pessoa
+const FICHAS = DADOS.personagens;
+const PERSONAGENS = {};   // só os jogáveis: { nome, opts, npc }
+for (const id in FICHAS) if (FICHAS[id].jogavel) PERSONAGENS[id] = { nome: FICHAS[id].nome, opts: Object.assign({}, FICHAS[id].ficha), npc: FICHAS[id].npc };
 // personalização (boné, cores, óculos) por personagem — salva no navegador
 const BONES = [['lobinho', 'Boné de lobinho 🐺'], ['ash', 'Boné do Ash ⚡'], ['chapeu', 'Chapéu escoteiro'], ['nenhum', 'Sem boné']];
 const PERSONALIZACOES = {
@@ -1092,7 +1190,7 @@ const PERSONALIZACOES = {
     ['oculosEstilo', 'Óculos', 'select', [['redondo', 'Redondos'], ['quadrado', 'Quadrados'], ['nenhum', 'Sem óculos']]], ['corOculos', 'Cor da armação', 'color', '#222222'],
     ['boneEstilo', 'Boné', 'select', BONES], ['corCabelo', 'Cor do cabelo', 'color', '#e8c95a'], ['corMochila', 'Mochila', 'color', '#d9822b'],
     ['corCamisa', 'Camisa', 'color', '#2f63c4'], ['corShort', 'Short', 'color', '#1c3f8f'], ['corTenis', 'Tênis', 'color', '#f4f4f4'],
-    ['aura', 'Aura 67 ✨ (brilho)', 'check', false],
+    ['aura', 'Aura 42 ✨ (brilho)', 'check', false],
   ],
   maria: [
     ['estiloCabelo', 'Cabelo', 'select', [['longo', 'Solto e comprido'], ['coque', 'Coque'], ['trancas', 'Tranças'], ['rabo', 'Rabo de cavalo']]], ['corCabelo', 'Cor do cabelo', 'color', '#5a3a1e'], ['corLaco', 'Cor do laço/elástico', 'color', '#ffd54a'],
@@ -1177,98 +1275,82 @@ jogador.position.copy(estado.pos);
 const cam = { yaw: -2.2, pitch: 0.35, dist: 7 };
 
 // ---------- NPCs ----------
+// Cada pessoa vem da ficha (dados/personagens.js) e da posição (dados/cap1_lugares.js). O que ela fala vem do
+// roteiro (dados/cap1_dialogos.js): npc() só cria o boneco e liga "Falar com X" ao motor de diálogos.
+const L1 = DADOS.cap1Lugares;
 const npcs = [];
+const VARS_DIALOGO = {};   // variáveis que o roteiro pode testar com "var:chave=valor" (ex.: fantasma = estágio da fuga)
+function contextoDialogo() {
+  const eu = PERSONAGENS[personagemId].nome, outroId = personagemId === 'lara' ? 'caio' : 'lara', gemeo = PERSONAGENS[outroId].nome;
+  return {
+    personagem: personagemId, estadoMissao: id => Missoes.estado(id), vars: VARS_DIALOGO,
+    textos: { nome: eu, gemeo, gemeoArtigo: (outroId === 'lara' ? 'a ' : 'o ') + gemeo, irmao: outroId === 'lara' ? 'a Lara, sua irmã gêmea,' : 'o Caio, seu irmão gêmeo,', filho: personagemId === 'lara' ? 'filha' : 'filho' },
+  };
+}
+// ações que uma entrada do roteiro pode disparar ("acao": 'nome')
+const ACOES_DIALOGO = {
+  mostraCachorros: () => { alissonFalou = true; mostraCachorros(); },
+  joaquimVoltaBravo: mesh => setTimeout(() => aplicaEmote(mesh, 'bravo', 0), 5000),   // volta pra cara fechada depois de falar
+};
+// fala do roteiro pra um personagem; devolve false se ele não está no roteiro (aí vale a fala fixa de npc())
+const capAtual = () => typeof capituloEscolhido === 'undefined' ? 1 : capituloEscolhido;   // cap2.js declara capituloEscolhido
+function dialogo(nome, mesh) {
+  const cap = capAtual();
+  const roteiro = (DADOS['cap' + cap + 'Dialogos'] || {})[nome] || DADOS.cap1Dialogos[nome]; if (!roteiro) return false;
+  const r = Dialogos.fala(roteiro, contextoDialogo()); if (!r) return false;
+  if (r.texto) aviso(nome + ': "' + r.texto + '"', r.ms || 4500);
+  if (r.emote && mesh) aplicaEmote(mesh, r.emote, 0);
+  if (r.acao) ACOES_DIALOGO[r.acao](mesh);
+  if (cap === 1 && !dia2 && !noite) {
+    Missoes.falou(nome);                                  // missões de "falar com X" terminam aqui, e só aqui
+    for (const id of r.conclui) Missoes.conclui(id);
+    for (const id of r.da) Missoes.da(id);
+  }
+  return true;
+}
 function npc(x, y, rot, nome, fala, opts) {
   const m = escoteiro(opts); m.position.set(x, altO(x, y), -y); m.rotation.y = rot; scene.add(m); m.userData.nome = nome;
   obstaculos.push({ x, z: -y, r: 0.5, npc: m });
   npcs.push({ mesh: m, nome, fala });
-  interativos.push({ x, z: -y, r: 3, nome: 'Falar com ' + nome, npcMesh: m, acao: () => { const a = (typeof amigosNoite !== 'undefined') && amigosNoite.find(a => a.mesh === m); if (a) falaAmigoNoite(a); else aviso(nome + ': "' + fala + '"', 4500); } });
+  interativos.push({ x, z: -y, r: 3, nome: 'Falar com ' + nome, npcMesh: m, acao: () => {
+    const a = (typeof amigosNoite !== 'undefined') && amigosNoite.find(a => a.mesh === m); if (a) return falaAmigoNoite(a);
+    if (!dialogo(nome, m)) aviso(nome + ': "' + fala + '"', 4500);
+  } });
   return m;
 }
-const chefe = npc(MAPA.portaoEntrada.x + 2, MAPA.portaoEntrada.y + 8, 2.4, 'Chefe Diego', 'Bem-vindo, lobinho! A Akelá está esperando a alcateia na árvore do lobinhos.com, em frente à cantina.', { escala: 1.15, camisa: M.lenco, lenco: M.amarelo, touca: true });
-npc(-200, -128, 0.5, 'Escoteiro Pedro', 'A mata aqui é cheia de figueiras e butiás. Cuidado pra não se perder!');
-npc(185, 60, 1, 'Escoteiro Lucas', 'Depois do futebol vamos pro Iate Clube ver os barcos.');
-// alcateia em roda ao redor da árvore da bandeira
-npc(ARV_BAND[0] - 6, ARV_BAND[1] - 4, 0.6, 'Akelá', 'Lobinhos, em roda na árvore do lobinhos.com — o nome que a própria alcateia escolheu! O Henrique trouxe os gêmeos e a carona — Maria, Dudu e Joaquim —, então estamos completos. Aperte E perto dela para fazer a bandeira, e depois podem subir nos galhos pelo A de bambu que a gente amarrou.', { escala: 1.1, camisa: M.lenco, lenco: M.amarelo });
-[
-  ['Lobinho Dudu', 0.9, 'Melhor possível! Essa é a árvore do lobinhos.com — fomos nós, os lobinhos, que demos esse nome pra ela!', { cabelo: new THREE.MeshLambertMaterial({ color: 0xe8c95a }), oculos: true, doidinho: true }],
-  ['Lobinha Maria', 2.1, 'Hoje tem jogo na mata depois da bandeira!', { estiloCabelo: 'longo', cabelo: new THREE.MeshLambertMaterial({ color: 0x5a3a1e }) }],
-  ['Lobinho Davi', 3.3, 'Lá de cima da árvore do lobinhos.com dá pra ver a lagoa inteira! E a Trailblazer do Tio Henrique lá na portaria.'],
-  ['Lobinha Larissa', 4.5, 'A pederneira fica no baú da casinha do salva-vidas, lá na praia! O pai da Lara que me contou.'],
-  ['Lobinho Joaquim', 5.6, '', { cabelo: new THREE.MeshLambertMaterial({ color: 0xe8c95a }), escala: 0.72, oculos: true, doidinho: true, brabinho: true }],   // irmão mais novo do Dudu: doidinho e brabinho
-].forEach(([n, a, fala, extra]) => {
-  const px = ARV_BAND[0] + Math.cos(a) * 6, py = ARV_BAND[1] + Math.sin(a) * 6;
-  const pid = n === 'Lobinho Dudu' ? 'dudu' : n === 'Lobinha Maria' ? 'maria' : null;
-  const m = npc(px, py, Math.atan2(ARV_BAND[0] - px, -(ARV_BAND[1] - py)), n, fala, pid ? optsPersonagem(pid) : Object.assign({ bone: true, escala: 0.85 }, extra || {}));
-  if (extra && extra.doidinho) npcs[npcs.length - 1].doidinho = true;
-  if (extra && extra.brabinho) aplicaEmote(m, 'bravo', 0);
-});
-// Joaquim, irmão mais novo do Dudu: doidinho igual ao irmão e brabinho (vive de cara fechada)
-interativos.find(i => i.nome === 'Falar com Lobinho Joaquim').acao = () => {
-  const falas = [
-    'Eu sou o Joaquim, irmão do Dudu! E NÃO sou pequeno, tá?! Eu subo na árvore do lobinhos.com mais rápido que ele!',
-    'O Dudu disse que eu sou doidinho que nem ele. Eu sou MAIS doido! E mais brabo! Grrr!',
-    'Vamos uivar bem alto no Grande Uivo! AUUUUU! Eu uivo mais alto que o Dudu, o Tio Henrique ouve lá da Trailblazer!',
-    'Quem mexer com o meu irmão vai ter que se ver comigo! ...mas o Dudu também é chato, viu. Hmpf.',
-    'O Dudu fica fazendo 67 o dia inteiro. SEIS SETE, SEIS SETE... Eu vou explodir!! Hehe, brincadeira. Ou não.',
-  ];
-  const m = npcs.find(n => n.nome === 'Lobinho Joaquim').mesh;
-  aplicaEmote(m, Math.random() < 0.7 ? 'bravo' : 'feliz', 0); setTimeout(() => aplicaEmote(m, 'bravo', 0), 5000);   // volta pra cara fechada depois de falar
-  aviso('Lobinho Joaquim: "' + falas[Math.floor(Math.random() * falas.length)] + '"', 5000);
-};
-// Maria é a melhor amiga da Lara: fala diferente dependendo de quem está jogando
-interativos.find(i => i.nome === 'Falar com Lobinha Maria').acao = () => {
-  const falas = personagemId === 'lara'
-    ? ['LARA! Minha melhor amiga chegou! Bora fazer a bandeira juntas e depois ir na praia?', 'Lara, trouxe pulseirinha de miçanga pra gente, uma pra cada uma. Amigas pra sempre!', 'Depois da bandeira a gente vai na cantina, tá? Eu pago o picolé, prometo!', 'Lara, o Dudu tá me enchendo o saco pra ir buscar o Caio. Deixa eles, vem cá!', 'O Tio Henrique trouxe vocês na Trailblazer? Que chique! Pede pra ele me dar carona na volta, hehe.']
-    : ['Oi, Caio! Cadê a Lara? Ela é minha melhor amiga, avisa ela que eu tô aqui na roda!', 'Caio, fala pra Lara que eu guardei um lugar do lado do meu na roda, tá?', 'Vocês dois são igualzinhos, mas a Lara é mais legal. Brincadeira! ...ou não, hehe.'];
-  aviso('Lobinha Maria: "' + falas[Math.floor(Math.random() * falas.length)] + '"', 5000);
-};
-// Dudu é doidinho e melhor amigo do Caio: fala diferente dependendo de quem está jogando
-interativos.find(i => i.nome === 'Falar com Lobinho Dudu').acao = () => {
-  const falas = personagemId === 'caio'
-    ? ['CAIOOO! Meu parceiro! Bora subir na árvore do lobinhos.com de cabeça pra baixo? Zoeira... ou não, hein!', 'Caio, tua irmã gêmea é igualzinha a ti, só que com o cabelo comprido. Eu quase chamei ela de Caio, hehe!', 'Mano, eu falei pra alcateia inteira que a gente é a dupla mais doida do camping. Melhor possível, uhul!', 'Caio, aposto que chego na praia antes de ti. Vale correr? VALE! Já era, tô indo! ...brincadeira, tô com preguiça.', 'O Tio Henrique deixa a gente entrar na Trailblazer? Só pra buzinar uma vez, prometo!']
-    : ['E aí! Eu sou o Dudu, o mais doidão da alcateia, hehe. Cê viu o Caio por aí? Ele é meu melhor amigo, o cara!', 'Lara, cê e o Caio são gêmeos mesmo, né? Igualzinhos! Se cê botar o boné do mesmo jeito eu não sei quem é quem, hehe.', 'Foi a gente que batizou a árvore de lobinhos.com, saca? Eu queria lobinhos.com.br, mas não coube na placa, que chato.', 'Se cê trombar com o Caio, fala que o Dudu tá aqui esperando pra jogar pega-pega, beleza?', 'Ó, dizem que eu sou doidinho. Eu prefiro "cheio de energia". Ou "muito doidinho" mesmo, tanto faz, hehe!'];
-  const irmao = personagemId === 'caio' ? 'a Lara' : 'o Caio';
-  falas.push('Tô fazendo 67 há tanto tempo que farmei 500 mil de aura! Eu sei que tu e ' + irmao + ' não gostam de 67... mas SEIS SETE! Hehe!');
-  aviso('Lobinho Dudu: "' + falas[Math.floor(Math.random() * falas.length)] + '"', 5500);
-};
+const ARV_BAND_C = L1.arvoreDaBandeira;
+for (const n of L1.npcs) {
+  const F = FICHAS[n.id], f = F.ficha;
+  let x = n.x, y = n.y, rot = n.rot;
+  if (n.roda !== undefined) { x = ARV_BAND_C[0] + Math.cos(n.roda) * L1.rodaRaio; y = ARV_BAND_C[1] + Math.sin(n.roda) * L1.rodaRaio; rot = Math.atan2(ARV_BAND_C[0] - x, -(ARV_BAND_C[1] - y)); }
+  // jogáveis que também estão na roda (Dudu, Maria) usam a personalização do menu
+  const m = npc(x, y, rot, F.npc || F.nome, '', PERSONAGENS[n.id] ? optsPersonagem(n.id) : Object.assign({}, f));   // na roda o Dudu é 'Lobinho Dudu'
+  if (f.doidinho) npcs[npcs.length - 1].doidinho = true;
+  if (f.brabinho) aplicaEmote(m, 'bravo', 0);
+}
 
 // Alisson, o lobinho mais baixinho, quer achar o Phantom (Fantasma), o galgo do camping — sem dono
-const ALISSON = [ARV_BAND[0] - 9, ARV_BAND[1] + 7];
-const alisson = npc(ALISSON[0], ALISSON[1], 2.6, 'Lobinho Alisson', 'Você viu o Fantasma?', { bone: true, escala: 0.74, gordo: true });
+const ALISSON = [L1.npcs.find(n => n.id === 'alisson').x, L1.npcs.find(n => n.id === 'alisson').y];
+// os capítulos 2-4 mexem direto nesses dois (preparaSabado, barco, Distrital)
+const alisson = npcs.find(n => n.nome === 'Lobinho Alisson').mesh, chefe = npcs.find(n => n.nome === 'Chefe Diego').mesh;
 // Phantom (Fantasma) começa em cima da árvore do lobinhos.com; foge pro chuveiro, depois pra portaria, e só lá deixa ser pego
 const PHANTOM_ARV = [ARV_BAND[0] + Math.cos(ARV_GALHOS[1]) * 2.2, ARV_BAND[1] - Math.sin(ARV_GALHOS[1]) * 2.2];
-const CHUVEIRO_POS = [32, -22], PORTARIA_POS = [MAPA.portaoEntrada.x + 4, MAPA.portaoEntrada.y + 6];
-const phantom = cachorro(PHANTOM_ARV[0], PHANTOM_ARV[1], { nome: 'Fantasma', galgo: true, cima: M.preto, baixo: M.branco, escala: 1.05 });
+const CHUVEIRO_POS = L1.chuveiroDaPraia, PORTARIA_POS = [MAPA.portaoEntrada.x + 4, MAPA.portaoEntrada.y + 6];
+const fichaCao = id => { const f = Object.assign({ nome: DADOS.cachorros[id].nome }, DADOS.cachorros[id].ficha); for (const k of ['cima', 'baixo']) if (typeof f[k] === 'number') f[k] = new THREE.MeshLambertMaterial({ color: f[k] }); return f; };
+const phantom = cachorro(PHANTOM_ARV[0], PHANTOM_ARV[1], fichaCao('fantasma'));
 phantom.mesh.position.y = ARV_TOPO; phantom.mesh.rotation.y = 0.8; phantom.estagio = 0; phantom.obst.r = 0;
+VARS_DIALOGO.fantasma = 0;
 let alissonFalou = false;
-interativos.find(i => i.nome === 'Falar com Lobinho Alisson').acao = () => {
-  if (!alissonFalou) mostraCachorros();
-  alissonFalou = true;
-  aviso(phantom.estagio === 0 ? 'Alisson: "Ô ' + PERSONAGENS[personagemId].nome + ', cê viu o Fantasma? Aquele cachorro magrelo do camping, preto em cima e branco embaixo... ele nem tem dono, mas é meu amigo! Acho que o maluco subiu na árvore do lobinhos.com, vai lá dar uma olhada pra mim?"'
-    : phantom.estagio === 1 ? 'Alisson: "Pô, ' + PERSONAGENS[personagemId].nome + ', o Fantasma vazou pro chuveiro da praia! Corre lá, vai!"'
-    : phantom.estagio === 2 ? 'Alisson: "Caraca, ele disparou pra portaria, perto do Chefe de moletom cinza! Chama ele que ele vem, ele é de boa."'
-    : 'Alisson: "Fantasma, seu doido! Fica aqui com a gente, vai... tem biscoito! O Chefe trouxe, aquele do moletom cinza, lá da Trailblazer."', 5500);
-};
-const outrosCachorros = [
-  cachorro(35, 27, { nome: 'Caramelo', cima: new THREE.MeshLambertMaterial({ color: 0xc98a3a }), escala: 0.95, fala: 'Um vira-lata caramelo. Simpático, mas não é o Fantasma.' }),
-  cachorro(-108, -28, { nome: 'Mel', cima: new THREE.MeshLambertMaterial({ color: 0xe0b860 }), baixo: new THREE.MeshLambertMaterial({ color: 0xf0dca0 }), escala: 1.1, fala: 'Uma golden peluda. Não é o Fantasma.' }),
-  cachorro(62, -18, { nome: 'Pingo', cima: M.preto, baixo: M.branco, escala: 0.8, fala: 'Preto em cima e branco embaixo... mas é gordinho e de perna curta. Não é o Fantasma!' }),
-  cachorro(-70, -62, { nome: 'Fumaça', galgo: true, cima: new THREE.MeshLambertMaterial({ color: 0x8a8a8a }), baixo: new THREE.MeshLambertMaterial({ color: 0xdddddd }), escala: 1.0, fala: 'Um cachorro magro cinza. Parecido, mas o Fantasma é preto em cima!' }),
-  cachorro(-190, -125, { nome: 'Bolota', cima: new THREE.MeshLambertMaterial({ color: 0xffffff }), baixo: new THREE.MeshLambertMaterial({ color: 0xffffff }), escala: 0.75, fala: 'Um cachorrinho branco todo enroladinho. Não é o Fantasma.' }),
-  cachorro(150, 125, { nome: 'Thor', cima: new THREE.MeshLambertMaterial({ color: 0x3a2a1a }), baixo: new THREE.MeshLambertMaterial({ color: 0xb08050 }), escala: 1.15, fala: 'Um rottweiler dormindo perto das barracas. Não é o Fantasma.' }),
-];
+const outrosCachorros = L1.cachorros.map(c => cachorro(c.x, c.y, fichaCao(c.id)));
 // os cachorros só aparecem (e só bloqueiam o caminho) depois de falar com o Alisson
 for (const c of cachorros) { c.mesh.visible = false; c.raioObst = c.obst.r; c.obst.r = 0; }
 function mostraCachorros() { for (const c of cachorros) { c.mesh.visible = true; if (c !== phantom) c.obst.r = c.raioObst; } }
-for (const c of outrosCachorros) interativos.push({ x: c.x, z: -c.y, r: 2.5, nome: 'Ver o cachorro ' + c.nome, cond: () => alissonFalou, acao: () => aviso(c.nome + ': ' + c.fala, 3500) });
-outrosCachorros.forEach((c, i) => c.fala = outrosCachorros[i].fala || '');
-[['Caramelo', 'Um vira-lata caramelo. Simpático, mas não é o Fantasma.'], ['Mel', 'Uma golden peluda. Não é o Fantasma.'], ['Pingo', 'Preto em cima e branco embaixo... mas é gordinho e de perna curta. Não é o Fantasma!'], ['Fumaça', 'Um cachorro magro cinza. Parecido, mas o Fantasma é preto em cima!'], ['Bolota', 'Um cachorrinho branco todo enroladinho. Não é o Fantasma.'], ['Thor', 'Um rottweiler dormindo perto das barracas. Não é o Fantasma.']].forEach(([n, f]) => { const c = outrosCachorros.find(c => c.nome === n); if (c) c.fala = f; });
+for (const c of outrosCachorros) interativos.push({ x: c.x, z: -c.y, r: 2.5, nome: 'Ver o cachorro ' + c.nome, cond: () => alissonFalou, acao: () => dialogo(c.nome) });
 interativos.push({ x: PORTARIA_POS[0], z: -PORTARIA_POS[1], r: 4, nome: 'Chamar o Fantasma', cond: () => phantom.estagio === 2 && !phantom.seguindo && !noite, acao: () => {
   phantom.seguindo = true; phantom.obst.r = 0; SOM.latido();
   aviso('🐕 É o Fantasma, o cachorro do camping! Ele abanou o rabo e vai te seguir. Leve ele até o Alisson, perto da árvore do lobinhos.com.', 5000);
-  phantom.estagio = 3;
-  const m = missoes.find(z => z.id === 'phantom'); m.txt = 'Levar o Fantasma até o Alisson'; renderMissoes();
+  phantom.estagio = 3; VARS_DIALOGO.fantasma = 3;
+  Missoes.texto('phantom', 'Levar o Fantasma até o Alisson');
 } });
 
 // ---------- cutscenes do Phantom fugindo ----------
@@ -1279,7 +1361,6 @@ function correPor(caminho, vel, aoChegar, cortarDepois) {
   phantom.mesh.position.set(caminho[0][0], altO(caminho[0][0], caminho[0][1]), -caminho[0][1]);
 }
 function iniciaFuga(estagioNovo) {
-  const m = missoes.find(z => z.id === 'phantom');
   if (estagioNovo === 1) {
     // pula da árvore e corre até o chuveiro
     phantom.pulo = { t: 0, de: phantom.mesh.position.clone(), para: new THREE.Vector3(ARV_BAND[0] + 3, altO(ARV_BAND[0] + 3, ARV_BAND[1] - 3), -ARV_BAND[1] + 3) };
@@ -1287,7 +1368,7 @@ function iniciaFuga(estagioNovo) {
     aviso('🐕 O Fantasma se assustou e pulou da árvore!', 3000); SOM.latido();
   } else {
     correPor([[CHUVEIRO_POS[0], CHUVEIRO_POS[1]], [17, 6], [46, 33], [72, 41], [117, 84], [142, 119], [161, 142], [176, 168], [188, 203], [PORTARIA_POS[0], PORTARIA_POS[1]]], 56, () => {
-      phantom.estagio = 2; m.txt = 'O Fantasma correu pra portaria! Vá lá chamar ele'; renderMissoes(); aviso('🐕 O Fantasma disparou pela estrada até a portaria!', 4000);
+      phantom.estagio = 2; VARS_DIALOGO.fantasma = 2; Missoes.texto('phantom', 'O Fantasma correu pra portaria! Vá lá chamar ele'); aviso('🐕 O Fantasma disparou pela estrada até a portaria!', 4000);
     }, 3.5);
   }
 }
@@ -1309,7 +1390,7 @@ function atualizaCena(dt) {
     phantom.mesh.rotation.y = Math.atan2(p.para.x - p.de.x, p.para.z - p.de.z);
     if (k >= 1) {
       correPor([[ARV_BAND[0] + 3, ARV_BAND[1] - 3], [-15, -11], [17, 6], [25, -12], [CHUVEIRO_POS[0], CHUVEIRO_POS[1]]], 44, () => {
-        phantom.estagio = 1; const m = missoes.find(z => z.id === 'phantom'); m.txt = 'O Fantasma fugiu pro chuveiro perto da praia! Vá atrás dele'; renderMissoes();
+        phantom.estagio = 1; VARS_DIALOGO.fantasma = 1; Missoes.texto('phantom', 'O Fantasma fugiu pro chuveiro perto da praia! Vá atrás dele');
         aviso('🐕 O Fantasma parou perto do chuveiro da praia.', 4000);
       });
     }
@@ -1394,48 +1475,61 @@ function cameraDaCena() {
 }
 
 // ---------- missões ----------
-const missoes = [
-  { id: 'chefe', txt: 'Voltar à portaria e se apresentar ao Chefe Diego', ok: false },
-  { id: 'bandeira', txt: 'Fazer a bandeira com a alcateia na árvore do lobinhos.com, em frente à cantina', ok: false },
-  { id: 'pederneira', txt: 'Pegar a pederneira no baú da casinha do salva-vidas', ok: false },
-  { id: 'lenha', txt: 'Juntar lenha na mata (0/6) — com a pederneira bastam 3', ok: false, n: 0 },
-  { id: 'fogueira', txt: 'Acender a fogueira do conselho', ok: false },
-  { id: 'phantom', txt: 'Achar o Fantasma, o cachorro do camping (preto em cima, branco embaixo), pro Alisson', ok: false },
-  { id: 'praia', txt: 'Ir até a Praia do Camping', ok: false },
-  { id: 'molhe', txt: 'Chegar ao molhe na ponta do camping', ok: false },
-];
+// `missoes` é a lista que aparece no HUD. No capítulo 1 quem manda nela é o motor (motor/missoes.js + dados/cap1_missoes.js):
+// a lista começa VAZIA e cada missão entra quando alguém dá. A noite, o dia 2 e os capítulos 2-4 ainda escrevem
+// direto na lista (próximo passo: passar eles pro motor também).
+const missoes = [];
 const lista = document.getElementById('lista');
 function renderMissoes() {
-  lista.innerHTML = missoes.map(m => `<li class="${m.ok ? 'ok' : ''}">${m.txt}</li>`).join('');
+  lista.innerHTML = missoes.length ? missoes.map(m => `<li class="${m.ok ? 'ok' : ''}">${m.txt}</li>`).join('') : '<li style="list-style:none;margin-left:-18px;opacity:.7">Nenhuma tarefa ainda — fale com as pessoas.</li>';
 }
+// conclui uma missão: pelo motor se ele conhece o id; senão do jeito antigo (noite, dia 2, capítulos 2-4)
 function completa(id) {
+  if (Missoes.existe(id) && Missoes.conclui(id)) return;
   const m = missoes.find(x => x.id === id); if (!m || m.ok) return;
   m.ok = true; renderMissoes(); aviso('✔ ' + m.txt, 3000); SOM.missao();
-  if (!dia2 && !noite && !noite2 && missoes.every(x => x.ok)) setTimeout(() => { aviso('🐺 Tarefas do dia concluídas! Agora vá dormir na barraca da sede... se conseguir.', 8000); SOM.fim(); }, 3200);
 }
+Missoes.dentro = (lugar, x, y) => !!MAPA[lugar] && pontoNoPoligono(x, y, MAPA[lugar]);
+let emAtalho = false;   // atalhos de debug marcam missões sem avisos/som
+Missoes.ao('ativa', id => { if (!missoes.find(m => m.id === id)) missoes.push({ id, txt: Missoes.texto(id), ok: false, n: 0 }); renderMissoes(); if (emAtalho) return; aviso('📋 Nova tarefa: ' + Missoes.texto(id), 3500); SOM.missao(); });
+Missoes.ao('muda', id => { const m = missoes.find(x => x.id === id); if (m) { m.txt = Missoes.texto(id); m.n = Missoes.progresso(id); renderMissoes(); } });
+Missoes.ao('concluida', id => {
+  const m = missoes.find(x => x.id === id); if (m) { m.ok = true; m.txt = Missoes.texto(id); }
+  renderMissoes(); if (emAtalho) return; aviso('✔ ' + Missoes.texto(id), 3000); SOM.missao();
+  const faltam = Missoes.todas().filter(x => !Missoes.def(x).opcional && !Missoes.concluida(x));
+  if (!dia2 && !noite && !noite2 && !faltam.length && !Missoes.ativas().length) setTimeout(() => { aviso('🐺 Tarefas do dia concluídas! Agora vá dormir na barraca da sede... se conseguir.', 8000); SOM.fim(); }, 3200);
+});
+Missoes.ao('erro', msg => { if (location.search.includes('debug')) aviso('MISSÕES: ' + msg, 5000); });
+Missoes.carrega(DADOS.cap1Missoes);
 renderMissoes();
+// atalho de teste: ?debug&missao=ID conclui tudo até ID (na ordem do arquivo) e deixa ID ativa; ?debug&missao=tudo conclui todas
+function atalhoMissoes(ate) {
+  emAtalho = true;
+  try { for (const id of Missoes.todas()) {
+    if (id === ate) { Missoes.da(id); return; }
+    Missoes.da(id); Missoes.conclui(id);
+    if (id === 'pederneira') estado.temPederneira = true;
+    if (id === 'bandeira') { bandeiraAlvo = bandeiraAlt = 5.4; }
+    if (id === 'fogueira') sede.chamas.visible = true;
+    if (id === 'phantom') { mostraCachorros(); alissonFalou = true; phantom.estagio = 4; VARS_DIALOGO.fantasma = 4; }
+  } } finally { emAtalho = false; }
+}
 
-// Chefe
-interativos.find(i => i.nome === 'Falar com Chefe Diego').acao = () => {
-  const irmao = personagemId === 'caio' ? 'a Lara, sua irmã gêmea,' : 'o Caio, seu irmão gêmeo,';
-  aviso('Chefe Diego: "Bem-vindo ao Camping Municipal, ' + PERSONAGENS[personagemId].nome + '! Vi que ' + irmao + ' chegou junto com o Henrique na Trailblazer. Siga a estrada até a cantina: a alcateia está em roda na árvore do lobinhos.com."', 6000);
-  completa('chefe');
-};
 // bandeira
 let bandeiraAlt = 1.2, bandeiraAlvo = 1.2;
-interativos.push({ x: ARV_BAND[0], z: -ARV_BAND[1], r: 8, nome: 'Fazer a bandeira', cond: () => { const m = missoes.find(x => x.id === 'bandeira'); return !!m && !m.ok; }, acao: () => { estado.yaw = Math.atan2(ARV_BAND[0] - estado.pos.x, -ARV_BAND[1] - estado.pos.z); abreMini('bandeira'); } });
+interativos.push({ x: ARV_BAND[0], z: -ARV_BAND[1], r: 8, nome: 'Fazer a bandeira', cond: () => Missoes.ativa('bandeira') || (capAtual() >= 2 && !!missoes.find(x => x.id === 'bandeira' && !x.ok)), acao: () => { estado.yaw = Math.atan2(ARV_BAND[0] - estado.pos.x, -ARV_BAND[1] - estado.pos.z); abreMini('bandeira'); } });
 // barracas da alcateia: o Pai monta na sede (já aparecem montadas)
-const spotsBarraca = [[-232, -150], [-236, -136], [-230, -122]];
+const spotsBarraca = L1.barracasDaFamilia;
 // a do meio é a do jogador (azul), as outras são do gêmeo e do Pai
 spotsBarraca.forEach((sp, i) => barraca(sp[0], sp[1], 0.3 * i, i === 1 ? M.lona3 : M.lona));
 placaLivre('Barracas da família', -240, -136, 5, Math.PI / 2 + 0.2);
 const placasBarraca = [placaLivre('Gêmeo(a)', -230, -154, 2.4, 0, 1.3), placaLivre('Minha barraca', -234, -140, 2.6, 0, 1.3), placaLivre('Pai', -228, -126, 2, 0, 1.3)];
 atualizaPlacasBarraca();
-// lenha espalhada
+// lenha espalhada pela mata — só existe depois que a Akelá dá a missão, e em quantidade generosa (precisa de 6, tem 20)
 const lenhas = [];
-(function () {
+function espalhaLenha(quantas) {
   let n = 0, guard = 0;
-  while (n < 6 && guard++ < 5000) {
+  while (n < quantas && guard++ < 5000) {
     const x = rnd(-270, 200), y = rnd(-180, 150);
     if (!pontoNoPoligono(x, y, MAPA.camping) || pontoNoPoligono(x, y, MAPA.praia) || distEstradas(x, y) > 40 || distEstradas(x, y) < 4) continue;
     if (Math.hypot(x - 190, y - 200) < 40) continue;
@@ -1443,19 +1537,18 @@ const lenhas = [];
     for (let i = 0; i < 3; i++) { const t = new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.1, 1, 6), M.madeira); t.rotation.z = Math.PI / 2; t.rotation.y = rnd(0, 3); t.position.set(rnd(-0.2, 0.2), 0.1 + i * 0.12, rnd(-0.2, 0.2)); g.add(t); }
     const brilho = new THREE.Mesh(new THREE.RingGeometry(0.8, 1, 16), new THREE.MeshBasicMaterial({ color: 0xffe08a, side: THREE.DoubleSide })); brilho.rotation.x = -Math.PI / 2; brilho.position.y = 0.05; g.add(brilho);
     scene.add(g); lenhas.push(g);
-    interativos.push({ x, z: -y, r: 2.2, nome: 'Pegar lenha', acao: function () { scene.remove(g); this.r = 0; ganhaLenha(1); } });
+    interativos.push({ x, z: -y, r: 2.2, nome: 'Pegar lenha', cond: () => dia2 || Missoes.podeColetar('lenha'), acao: function () { scene.remove(g); this.r = 0; ganhaLenha(1); } });
     n++;
   }
-})();
+}
+Missoes.ao('ativa', id => { if (id === 'lenha') espalhaLenha(20); });
 let madeira = 0;   // estoque de madeira (dia 2: construções)
 const madeiraEl = document.getElementById('madeira');
 function mostraMadeira() { madeiraEl.style.display = 'none'; }
 function ganhaLenha(q) {
   SOM.coleta();
   if (dia2) { madeira += q; mostraMadeira(); return; }
-  const m = missoes.find(z => z.id === 'lenha'); if (!m) return;
-  m.n += q; m.txt = `Juntar lenha na mata (${m.n}/6) — com a pederneira bastam 3`; renderMissoes();
-  if (!m.ok && (m.n >= 6 || (estado.temPederneira && m.n >= 3))) completa('lenha');
+  Missoes.coletou('lenha', q);   // conclui sozinha quando bate a meta (6, ou 3 com a pederneira)
 }
 let galhos = 0;
 function ganhaGalho() {
@@ -1474,14 +1567,12 @@ function caiItem(x, z, tipo) {
 }
 const itensCaindo = [];
 // fogueira
-interativos.push({ x: sede.fogueiraPos[0], z: -sede.fogueiraPos[1], r: 4.5, nome: 'Acender a fogueira', cond: () => !sede.chamas.visible && !!missoes.find(z => z.id === 'lenha'), acao: () => {
-  const m = missoes.find(z => z.id === 'lenha'); if (!m) return;
-  const precisa = estado.temPederneira ? 3 : 6;
-  if (m.n < precisa) {
-    aviso(estado.temPederneira ? `Com a pederneira bastam 3 lenhas (${m.n}/3)` : `Ainda falta lenha! (${m.n}/6) — ou pegue a pederneira na casinha do salva-vidas`, 3500);
+interativos.push({ x: sede.fogueiraPos[0], z: -sede.fogueiraPos[1], r: 4.5, nome: 'Acender a fogueira', cond: () => !sede.chamas.visible && Missoes.ativa('fogueira'), acao: () => {
+  const n = Missoes.progresso('lenha'), precisa = Missoes.meta('lenha');
+  if (!Missoes.concluida('lenha')) {
+    aviso(estado.temPederneira ? `Com a pederneira bastam 3 lenhas (${n}/3)` : `Ainda falta lenha! (${n}/${precisa}) — ou pegue a pederneira na casinha do salva-vidas`, 3500);
     return;
   }
-  if (!m.ok) completa('lenha');
   estado.yaw = Math.atan2(sede.fogueiraPos[0] - estado.pos.x, -sede.fogueiraPos[1] - estado.pos.z);
   abreMini('fogo');
 } });
@@ -1500,32 +1591,23 @@ const escBase = pontoEscada(0);
 interativos.push({ x: escBase.x, z: escBase.z, r: 2, nome: 'Subir pelo A de bambu', cond: () => !estado.escalando && estado.pos.y < ARV_BASE + 1, acao: () => { estado.escalando = 1; estado.vy = 0; } });
 interativos.push({ x: ARV_BAND[0], z: -ARV_BAND[1], r: 3.2, nome: 'Descer pelo A de bambu', cond: () => !estado.escalando && naPlataforma() && Math.hypot(estado.pos.x - ARV_BAND[0], estado.pos.z + ARV_BAND[1]) < 3, acao: () => { estado.escalando = -1; estado.vy = 0; } });
 // baú da pederneira
-interativos.push({ x: salva.bauPos[0], z: -salva.bauPos[1], r: 3, nome: 'Abrir o baú', acao: function () {
+// baú da pederneira: só abre com a missão da Larissa ativa (item de missão não existe antes da missão)
+interativos.push({ x: salva.bauPos[0], z: -salva.bauPos[1], r: 3, nome: 'Abrir o baú', cond: () => Missoes.ativa('pederneira'), acao: function () {
   salva.tampa.rotation.x = -1.6; salva.tampa.position.z -= 0.35; salva.tampa.position.y += 0.3; salva.pederneira.visible = true; SOM.bau();
   estado.temPederneira = true; this.r = 0;
   aviso('Você achou uma pederneira no baú do salva-vidas! Agora a fogueira acende com só 3 lenhas.', 4500);
-  completa('pederneira');
-  const m = missoes.find(z => z.id === 'lenha'); if (m && !m.ok && m.n >= 3) completa('lenha');
+  Missoes.coletou('pederneira', 1);
+  Missoes.meta('lenha', 3);   // com a pederneira bastam 3 (conclui na hora se já tiver)
 } });
 // bússola de locais (nome no HUD)
-const locais = [
-  { nome: 'Portaria', x: 190, y: 210, r: 30 }, { nome: 'Campo do Camping', x: 187, y: 64, r: 30 },
-  { nome: 'Árvore do lobinhos.com', x: -34, y: 2, r: 9 }, { nome: 'Cantina (Lanchonete do Camping)', x: -22, y: 8, r: 22 }, { nome: 'Banheiros', x: -50, y: -8, r: 12 },
-  { nome: 'Praia do Camping', poly: MAPA.praia }, { nome: 'Playground', x: 0, y: -62, r: 12 },
-  { nome: 'Quadra de Vôlei', x: 120, y: -2, r: 14 }, { nome: 'Casinha do Salva-vidas', x: 95, y: -17, r: 7 }, { nome: 'Cancha de Bocha', x: -70, y: -70, r: 14 },
-  { nome: 'Fogueira do Conselho', x: -186, y: -136, r: 7 }, { nome: 'Barracas da família', x: -233, y: -136, r: 10 }, { nome: 'Sede do Grupo Escoteiro Garibaldi', x: -205, y: -135, r: 35 }, { nome: 'Churrasqueira Coletiva', x: 60, y: -6, r: 10 },
-  { nome: 'Churrasqueira Coletiva', x: -120, y: -128, r: 10 }, { nome: 'Molhe', x: 247, y: -115, r: 28 },
-  { nome: 'Iate Clube', poly: MAPA.iate }, { nome: 'Lagoa dos Patos', agua: true },
-  { nome: 'Área de acampamento', x: -100, y: -20, r: 30 }, { nome: 'Área de acampamento', x: 40, y: 30, r: 22 },
-  { nome: 'Área de acampamento', x: -160, y: -90, r: 22 }, { nome: 'Área de acampamento', x: 130, y: 130, r: 20 },
-  { nome: 'Mata nativa', poly: MAPA.camping }, { nome: 'Alameda Mano Serpa', poly: MAPA.continente },
-];
+const locais = L1.locais.map(l => l.poly ? Object.assign({}, l, { poly: MAPA[l.poly] }) : l);
 
 // ---------- cutscene inicial: chegada na Trailblazer ----------
 const carro = trailblazer();
-const CARRO_CAMINHO = [[150, 270], [189, 255], [200, 249], [196, 236], [193, 226]];   // Alameda Mano Serpa até a portaria
+const CARRO_CAMINHO = L1.caminhoDoCarro;   // Alameda Mano Serpa até a portaria
 carro.position.set(193, altO(193, 226), -226); carro.rotation.y = Math.atan2(-3, 10) - Math.PI / 2;
-obstaculos.push({ x: 193, z: -226, hw: 2.6, hd: 1.1, rot: 0 });
+const carroObst = { x: 193, z: -226, hw: 2.6, hd: 1.1, rot: carro.rotation.y };   // girado junto com o carro (com rot 0 dava pra entrar no capô)
+obstaculos.push(carroObst);
 let introFeita = false, outroLobinho = null, pai = null;
 // Pai (Henrique): adulto de moletom cinza claro e cabelo bem curtinho
 // celular preto com a tela do Claude: fica na mão do Pai, que passa o tempo programando
@@ -1541,7 +1623,7 @@ function daCelular(m) {
   cel.position.set(0, -0.52, 0.08); cel.rotation.x = -0.9; u.bracoD.add(cel);
   u.celular = cel;
 }
-const PAI_OPTS = { escala: 1.25, moletom: true, semChapeu: true, semBochecha: true, camisa: new THREE.MeshLambertMaterial({ color: 0xc9c9c9 }), calca: new THREE.MeshLambertMaterial({ color: 0x3a4250 }), cabelo: new THREE.MeshLambertMaterial({ color: 0x2a2a2a }) };
+const PAI_OPTS = FICHAS.pai.ficha;
 function iniciaIntro() {
   if (introFeita) return; introFeita = true;
   jogador.visible = false;
@@ -1576,20 +1658,11 @@ function atualizaIntro(dt) {
       const pp = pos.clone().add(perp.clone().multiplyScalar(-1.9)).add(dir.clone().multiplyScalar(0.9));   // motorista
       pai = npc(pp.x, -pp.z, Math.atan2(-perp.x, -perp.z), 'Pai', '', PAI_OPTS);
       aplicaEmote(pai, 'serio', 0); pai.userData.serio = true; daCelular(pai);
-      interativos.find(i => i.nome === 'Falar com Pai').acao = () => {
-        const f = ['Vai lá, ' + (personagemId === 'lara' ? 'filha' : 'filho') + '. As barracas da alcateia já estão montadas na sede.',
-                   'Cuidado na árvore do lobinhos.com.',
-                   'Não dá comida pro Fantasma.',
-                   'Qualquer coisa, estou aqui. Só vou terminar esse código com o Claude.',
-                   '...só um minuto, o Claude tá quase acertando esse bug.'];
-        aviso('Pai: "' + f[Math.floor(Math.random() * f.length)] + '"', 5000);
-      };
       estado.pos.set(pj.x, alt(pj.x, pj.z), pj.z); estado.yaw = Math.atan2(perp.x, perp.z); jogador.position.copy(estado.pos); jogador.rotation.y = estado.yaw; jogador.visible = true;
       const outroId = personagemId === 'lara' ? 'caio' : 'lara';
       const jGemeo = jogadores.find(j => j.id === outroId);
       if (jGemeo) { outroLobinho = jGemeo.mesh; jGemeo.pos.set(po.x, 0, po.z); jGemeo.yaw = Math.atan2(-perp.x, -perp.z); outroLobinho.position.copy(jGemeo.pos); outroLobinho.rotation.y = jGemeo.yaw; }
       else outroLobinho = npc(po.x, -po.z, Math.atan2(-perp.x, -perp.z), PERSONAGENS[outroId].nome, '', PERSONAGENS[outroId].opts);
-      if (!jGemeo) interativos.find(i => i.nome === 'Falar com ' + PERSONAGENS[outroId].nome).acao = () => aviso(PERSONAGENS[outroId].nome + ': "' + (outroId === 'caio' ? 'Vou lá na roda ver o Dudu, mana. Te encontro na árvore do lobinhos.com! E não conta pra ninguém que eu sou 3 minutos mais velho... ah, todo mundo já sabe.' : 'Vou lá na roda ver a Maria, mano. Te encontro na árvore do lobinhos.com! Gêmeos têm que ficar juntos, né?') + '"', 4500);
       // a carona (Maria, Dudu e Joaquim) desce pelo banco de trás; voltam pros lugares deles na roda quando chegam na árvore
       cena.carona = ['Lobinha Maria', 'Lobinho Dudu', 'Lobinho Joaquim'].map(n => npcs.find(x => x.nome === n))
         .filter(n => n && n.mesh.parent && !jogadores.some(j => j.mesh === n.mesh))
@@ -1645,11 +1718,11 @@ function atualizaIntro(dt) {
       camera.position.set(estado.pos.x, 3.2, estado.pos.z + 6);
     }
   } else if (cena.fase === 'chega') {
-    if (cena.t > 0.6 && !cena.clareou) { cena.clareou = true; fadeEl.style.opacity = 0; aviso('Pai: "Chegamos. Vai lá pra roda, ' + PERSONAGENS[personagemId].nome + '. As barracas eu já montei na sede, pode deixar comigo."', 4500); }
-    if (cena.t > 2.2) { cena = null; document.getElementById('hud').style.opacity = 1; }
+    if (cena.t > 0.6 && !cena.clareou) { cena.clareou = true; fadeEl.style.opacity = 0; aviso('Pai: "Chegamos. Antes de ir pra roda, ' + PERSONAGENS[personagemId].nome + ', volta na portaria e se apresenta pro Chefe Diego. As barracas eu já montei na sede, pode deixar comigo."', 5500); }
+    if (cena.t > 2.2) { cena = null; document.getElementById('hud').style.opacity = 1; Missoes.da('chefe'); }   // o Pai dá a primeira missão
   }
 }
-const INTRO_CAMINHO = [[193, 222], [188, 203], [176, 168], [161, 142], [142, 119], [124, 95], [117, 84], [97, 52], [72, 41], [46, 33], [17, 6], [-15, -11], [-31, -18], [-34, -6]];
+const INTRO_CAMINHO = L1.caminhoAPe;
 function cameraIntro() {
   const pos = carro.position;
   if (cena.fase === 'dirige') { const p = P(MAPA.portaoEntrada.x + 10, MAPA.portaoEntrada.y + 26); camera.position.set(p.x, 3.2, p.z); camera.lookAt(pos.x, 1, pos.z); }
@@ -1751,21 +1824,19 @@ function atualizaExtra(j, dt) {
     const l = Math.min(1, Math.hypot(mx, mz)), fx = Math.sin(j.cam.yaw), fz = Math.cos(j.cam.yaw);
     const dx = (fx * mz + fz * mx) / Math.max(1e-6, Math.hypot(mx, mz)) * l, dzv = (fz * mz - fx * mx) / Math.max(1e-6, Math.hypot(mx, mz)) * l;
     const alvo = Math.atan2(dx, dzv); let d = alvo - j.yaw; d = Math.atan2(Math.sin(d), Math.cos(d)); j.yaw += d * Math.min(1, dt * 12);
-    const nx = j.pos.x + dx * vel * dt, nz = j.pos.z + dzv * vel * dt;
-    if (emTerra(nx, nz) || naAguaRasa(nx, nz)) { j.pos.x = nx; j.pos.z = nz; }
-    else if (emTerra(nx, j.pos.z) || naAguaRasa(nx, j.pos.z)) j.pos.x = nx;
-    else if (emTerra(j.pos.x, nz) || naAguaRasa(j.pos.x, nz)) j.pos.z = nz;
+    andaEmPassos(j.pos, dx * vel * dt, dzv * vel * dt);
   }
   resolveColisoes(j.pos);
   if (inp.pular && j.noChao && !nadando) { j.vy = 6; j.noChao = false; SOM.pulo(); }
-  const chao = nadando ? -0.9 : alt(j.pos.x, j.pos.z);
+  const pbj = sobrePonte(j.pos.x, j.pos.z), chao = pbj ? pbj.alt : nadando ? -0.9 : alt(j.pos.x, j.pos.z);   // J2-J4 andavam por baixo da ponte
   j.vy -= 18 * dt; j.pos.y += j.vy * dt;
   if (j.pos.y <= chao) { j.pos.y = chao; j.vy = 0; j.noChao = true; }
   j.mesh.position.copy(j.pos); j.mesh.rotation.y = j.yaw;
   j.velAnim += ((movendo ? (vel > 5 ? 14 : 9) : 0) - j.velAnim) * Math.min(1, dt * 8); const fA = j.fase; j.fase += j.velAnim * dt;
-  if (movendo && j.noChao && Math.floor(fA / Math.PI) !== Math.floor(j.fase / Math.PI)) SOM.passo(vel > 5, nadando);
+  if (movendo && j.noChao && Math.floor(fA / Math.PI) !== Math.floor(j.fase / Math.PI)) { SOM.passo(vel > 5, nadando); emitePasso(j, vel > 5, nadando); }
   const sw = Math.sin(j.fase) * (movendo ? 0.6 : 0), u = j.mesh.userData;
   u.pernaE.rotation.x = sw; u.pernaD.rotation.x = -sw; u.bracoE.rotation.x = -sw; u.bracoD.rotation.x = sw;
+  balancaLenco(u, j.velAnim / 14, dt);
   animaBatucada(j.mesh);
   if (inp.emote) { aplicaEmote(j.mesh, inp.emote, inp.emote === 'feliz' ? 0 : 4); ({ bravo: SOM.grr, triste: SOM.aww, surpreso: SOM.uau }[inp.emote] || (() => {}))(); }
   if (u.emoteAte && tempo > u.emoteAte) aplicaEmote(j.mesh, 'feliz', 0);
@@ -1889,16 +1960,42 @@ function cameraAspira() {
   const meio = estado.pos.clone().lerp(cena.alvo, 0.45); const lado = new THREE.Vector3(Math.cos(estado.yaw), 0, -Math.sin(estado.yaw));
   const c = meio.clone().add(lado.multiplyScalar(4.5)); c.y = 2; camera.position.lerp(c, 0.12); camera.lookAt(meio.x, 1, meio.z);
 }
-function ligaNoite(on) {
+let aguaNoite = false;
+// ---------- hora do dia: 0 = dia, 0.5 = pôr do sol, 1 = noite ----------
+// ligaNoite só troca o alvo; o céu, a neblina, o sol e a água vão mudando aos poucos (entardecer ~18 s, amanhecer ~8 s)
+const HORAS = [
+  { ceu: 0x9ecbff, neb: 0xbfdcff, perto: 150, longe: 650, solCor: 0xfff2d8, solI: 0.95, hemiCor: 0xdfefff, hemiI: 0.55, agua: 0x1e5f8f, solAlt: 140 },
+  { ceu: 0xf59a62, neb: 0xf6b48c, perto: 90, longe: 480, solCor: 0xff9a4a, solI: 0.85, hemiCor: 0xffc49a, hemiI: 0.42, agua: 0x7a5a6a, solAlt: 16 },
+  { ceu: 0x070c1c, neb: 0x070c1c, perto: 25, longe: 160, solCor: 0x8fa8ff, solI: 0.18, hemiCor: 0x223355, hemiI: 0.12, agua: 0x0a1a30, solAlt: 140 },
+];
+let hora = 0, horaAlvo = 0, solAltura = 140;
+const corCeu = new THREE.Color(0x9ecbff), corTmpA = new THREE.Color(), corTmpB = new THREE.Color();
+const discoSol = new THREE.Mesh(new THREE.SphereGeometry(22, 20, 14), new THREE.MeshBasicMaterial({ color: 0xffb060, fog: false }));
+discoSol.visible = false; scene.add(discoSol);
+function aplicaHora() {
+  const k = hora * 2, i = Math.min(1, Math.floor(k)), t = k - i, a = HORAS[i], b = HORAS[i + 1];
+  const mix = (ca, cb) => corTmpA.setHex(ca).lerp(corTmpB.setHex(cb), t);
+  corCeu.copy(mix(a.ceu, b.ceu)); scene.background = corCeu; renderer.setClearColor(corCeu);
+  if (!scene.fog) scene.fog = new THREE.Fog(0, 1, 2);
+  scene.fog.color.copy(mix(a.neb, b.neb)); scene.fog.near = a.perto + (b.perto - a.perto) * t; scene.fog.far = a.longe + (b.longe - a.longe) * t;
+  sol.color.copy(mix(a.solCor, b.solCor)); sol.intensity = a.solI + (b.solI - a.solI) * t;
+  hemi.color.copy(mix(a.hemiCor, b.hemiCor)); hemi.intensity = a.hemiI + (b.hemiI - a.hemiI) * t;
+  M.agua.color.copy(mix(a.agua, b.agua)); aguaNoite = hora > 0.02;
+  solAltura = a.solAlt + (b.solAlt - a.solAlt) * t;
+  discoSol.visible = hora > 0.12 && hora < 0.8; discoSol.material.color.setHex(hora < 0.5 ? 0xffc070 : 0xff7a3a);
+  const noiteDeVerdade = horaAlvo === 1 && hora > 0.7; lua.visible = estrelas.visible = noiteDeVerdade;
+}
+function andaHora(dt) {
+  if (hora === horaAlvo) return;
+  hora = horaAlvo > hora ? Math.min(horaAlvo, hora + dt / 18) : Math.max(horaAlvo, hora - dt / 8);
+  aplicaHora();
+  if (hora === 0 && typeof aplicaMods === 'function') aplicaMods();   // de volta ao dia: céu e neblina dos mods
+}
+function ligaNoite(on, imediato) {
   noite = on;
-  scene.background = new THREE.Color(on ? 0x070c1c : 0x9ecbff);
-  scene.fog = on ? new THREE.Fog(0x070c1c, 25, 160) : new THREE.Fog(0xbfdcff, 150, 650);
-  sol.intensity = on ? 0.18 : 0.95; sol.color.setHex(on ? 0x8fa8ff : 0xfff2d8);
-  hemi.intensity = on ? 0.12 : 0.55; hemi.color.setHex(on ? 0x223355 : 0xdfefff);
-  renderer.setClearColor(on ? 0x070c1c : 0x9ecbff);
-  M.agua.color.setHex(on ? 0x0a1a30 : 0x1e5f8f);
-  lua.visible = on; vagalumes.visible = on; lanterna.intensity = on ? 2.2 : 0;
-  luzPraia.intensity = on ? 1.6 : 0; lampiao.visible = on && !noite2; coruja.visible = on && !noite2; estrelas.visible = on;
+  horaAlvo = on ? 1 : 0; if (imediato) { hora = horaAlvo; aplicaHora(); if (!on && typeof aplicaMods === 'function') aplicaMods(); }
+  lua.visible = on && hora > 0.7; vagalumes.visible = on; lanterna.intensity = on ? 2.2 : 0;
+  luzPraia.intensity = on ? 1.6 : 0; lampiao.visible = on && !noite2; coruja.visible = on && !noite2; estrelas.visible = on && hora > 0.7;
   // olhos do Fantasma brilham no escuro
   phantom.olhos.forEach(o => { o.material = on ? new THREE.MeshBasicMaterial({ color: 0xccff66 }) : M.preto; o.scale.setScalar(on ? 2.2 : 1); });
   luzArvore.intensity = on ? 1.4 : 0;
@@ -1963,7 +2060,7 @@ interativos.push({ x: ARV_BAND[0], z: -ARV_BAND[1], r: 7, nome: 'Investigar as b
 interativos.push({ x: 0, z: 0, r: 3.5, nome: 'Pegar o fantasma!', cond: () => noite && !noite2 && lencol.visible && capituloNoite && !capituloNoite.revelado && ['risada', 'luz', 'batidas'].every(id => { const m = missoes.find(x => x.id === id); return m && m.ok; }), acao: () => {
   capituloNoite.revelado = true; cutsceneAspirador();
 } });
-interativos.push({ x: spotsBarraca[1][0], z: -spotsBarraca[1][1], r: 3.5, nome: 'Dormir na barraca', cond: () => !noite && !capituloNoite && missoes.find(m => m.id === 'fogueira') && missoes.find(m => m.id === 'fogueira').ok, acao: () => iniciaNoite() });
+interativos.push({ x: spotsBarraca[1][0], z: -spotsBarraca[1][1], r: 3.5, nome: 'Dormir na barraca', cond: () => !noite && !capituloNoite && Missoes.concluida('fogueira'), acao: () => iniciaNoite() });
 interativos.push({ x: spotsBarraca[1][0], z: -spotsBarraca[1][1], r: 3.5, nome: 'Dormir na barraca', cond: () => noite2 && n2.historiaContada && !n2.fase && !cena, acao: () => iniciaNoite2() });
 interativos.push({ x: spotsBarraca[1][0], z: -spotsBarraca[1][1], r: 3.5, nome: 'Dormir', cond: () => noite2 && n2.fase === 'voltar', acao: () => {
   cena = { amanhece2: true, t: 0 }; fadeEl.style.opacity = 1; document.getElementById('hud').style.opacity = 0;
@@ -2030,7 +2127,7 @@ function terminaSonho() {
 function atualizaAmanhece(dt) {
   cena.t += dt;
   if (cena.t > 1.2 && !cena.texto) { cena.texto = true; textoNoite.textContent = 'Zzz...'; textoNoite.style.opacity = 1; }
-  if (cena.t > 3.0 && !cena.sonhou) { cena.sonhou = true; textoNoite.style.opacity = 0; ligaNoite(false); iniciaSonho(); }
+  if (cena.t > 3.0 && !cena.sonhou) { cena.sonhou = true; textoNoite.style.opacity = 0; ligaNoite(false, true); iniciaSonho(); }
   if (sonho.ativo) { atualizaSonho(dt); return; }
   if (cena.sonhou && !cena.acordou) { cena.acordou = true; cena.t = 2.4; setTimeout(() => { textoNoite.textContent = '🌅 Bom dia!'; textoNoite.style.opacity = 1; SOM.galo(); }, 600); }
   if (cena.t > 4 && !cena.pronto) {
@@ -2347,13 +2444,13 @@ function usaHabilidade(pl) {
     if (phantom.estagio < 2 && !noite) { aviso('🍪 O Fantasma ainda tá longe demais pra sentir o cheiro do biscoito...', 2500); return; }
     SOM.latido(); aviso('🍪 Maria jogou um biscoito de cachorro! O Fantasma vem correndo!', 2500);
     phantom.mesh.visible = true; phantom.seguindo = true; phantom.obst.r = 0; if (phantom.estagio < 4) phantom.estagio = 3;
-    if (phantom.estagio === 2) { const m = missoes.find(z => z.id === 'phantom'); if (m && !m.ok) { m.txt = 'Levar o Fantasma até o Alisson'; renderMissoes(); } }
+    if (phantom.estagio === 2) Missoes.texto('phantom', 'Levar o Fantasma até o Alisson');
     phantom.alvoSeguir = pl.mesh;
     if (pl.p1) { setTimeout(() => { if (!cena) abreDestinos(); }, 1500); }
   }
 }
 // menu de destinos da Maria
-const DESTINOS = [['Portaria', 190, 218], ['Árvore do lobinhos.com', -34, -8], ['Praia do Camping', 60, -40], ['Casinha do salva-vidas', 95, -24], ['Sede do Grupo Escoteiro', -200, -138], ['Molhe', 247, -110], ['Campo do Camping', 187, 60], ['Cancha de bocha', -70, -62]];
+const DESTINOS = L1.destinos;
 const destinosEl = document.getElementById('destinos');
 let destinoIdx = 0, escolhendoDestino = false;
 function abreDestinos() {
@@ -2371,7 +2468,7 @@ function confirmaDestino() {
   if (jaPerto) vai(); else { aviso('Esperando o Fantasma chegar...', 2000); const w = setInterval(() => { if (Math.hypot(phantom.mesh.position.x - estado.pos.x, phantom.mesh.position.z - estado.pos.z) < 6) { clearInterval(w); vai(); } }, 200); }
 }
 addEventListener('keydown', e => {
-  if (!escolhendoDestino) return;
+  if (!escolhendoDestino || pausado()) return;
   if (e.code === 'ArrowUp' || e.code === 'KeyW') { destinoIdx = (destinoIdx + DESTINOS.length - 1) % DESTINOS.length; desenhaDestinos(); }
   if (e.code === 'ArrowDown' || e.code === 'KeyS') { destinoIdx = (destinoIdx + 1) % DESTINOS.length; desenhaDestinos(); }
   const n = parseInt(e.key); if (n >= 1 && n <= DESTINOS.length) { destinoIdx = n - 1; desenhaDestinos(); }
@@ -2698,8 +2795,8 @@ function miniTecla(down) {
     const ok = mini.pos > 0.2 && mini.pos < 0.8;
     if (ok) { mini.acertos++; mini.msg = ['Boa!', 'Isso!', 'Mais uma!', 'Quase lá!'][Math.min(3, mini.acertos - 1)]; SOM.coleta(); }
     else { mini.msg = 'Escorregou a corda! Tenta de novo no verde.'; SOM.grr(); }
-    bandeiraAlvo = 1.2 + (5.4 - 1.2) * (mini.acertos / mini.precisa);
-    if (mini.acertos >= mini.precisa) { const l = mini.livre; fechaMini(); bandeiraAlvo = 5.4; SOM.uivo(); if (l) fimLivre(); else { aviso('🐺 Alcateia: "Melhor possível!" — a bandeira sobe na árvore do lobinhos.com.', 4000); completa('bandeira'); } }
+    if (!mini.livre) bandeiraAlvo = 1.2 + (5.4 - 1.2) * (mini.acertos / mini.precisa);   // o minijogo do menu não mexe no mastro da história
+    if (mini.acertos >= mini.precisa) { const l = mini.livre; fechaMini(); if (!l) bandeiraAlvo = 5.4; SOM.uivo(); if (l) fimLivre(); else { aviso('🐺 Alcateia: "Melhor possível!" — a bandeira sobe na árvore do lobinhos.com.', 4000); if (!Missoes.minigame('bandeira').length) completa('bandeira'); } }
     else desenhaMini();
   } else {
     if (down) { mini.segurando = true; }
@@ -2710,7 +2807,7 @@ function miniTecla(down) {
       else if (c >= 0.82) { mini.faiscas = 0; mini.msg = 'Forte demais! Espalhou a lenha, começa de novo.'; SOM.grr(); }
       else { mini.msg = 'Fraco demais, não saiu faísca.'; }
       mini.carga = 0;
-      if (mini.faiscas >= mini.precisa) { const l = mini.livre; fechaMini(); sede.chamas.visible = true; SOM.faisca(); SOM.fogueira(true); if (l) fimLivre(); else { aviso('🔥 A fogueira do conselho está acesa!', 3500); completa('fogueira'); } }
+      if (mini.faiscas >= mini.precisa) { const l = mini.livre; fechaMini(); SOM.faisca(); if (l) fimLivre(); else { sede.chamas.visible = true; aviso('🔥 A fogueira do conselho está acesa!', 3500); if (!Missoes.minigame('fogo').length) completa('fogueira'); } }
       else desenhaMini();
     }
   }
@@ -2800,7 +2897,7 @@ interativos.push({ x: -70, z: 70, r: 13, nome: 'Jogar bocha', cond: () => podeMi
 interativos.push({ x: 187, z: -64, r: 24, nome: 'Chutar a gol', cond: () => podeMini(), acao: () => { estado.yaw = Math.atan2(202 - 187, -86 + 64) + 0; abreMini('futebol'); } });
 
 // ---- minigames direto do menu (modo livre: sem efeito nas missões) ----
-const LUGAR_MINI = { bandeira: [-34, -9, 0], fogo: [-186, -142, 0], martelar: [-204, -126, 0.3], serrar: [-30, -10, 0.4], amarrar: [-70, -2, 0.2], pesca: [320, 195, 0], bocha: [-80, -70, Math.PI / 2 + 0.2], futebol: [172, 58, 0.6] };
+const LUGAR_MINI = L1.minigames;
 function miniLivre(tipo) {
   if (mini) fechaMini();
   const [x, y, yaw] = LUGAR_MINI[tipo]; estado.pos.set(x, altO(x, y), -y); cam.yaw = yaw; cam.pitch = 0.25; cam.dist = 6;
@@ -2814,11 +2911,11 @@ function fimLivre() {
   setTimeout(() => { if (document.pointerLockElement) document.exitPointerLock(); inicio.style.display = 'flex'; SOM.ambiente(false); SOM.menu(true); }, 2500);
 }
 document.querySelectorAll('#inicio .mg').forEach(b => b.addEventListener('click', e => { e.stopPropagation(); miniLivre(b.dataset.mini); }));
-addEventListener('keydown', e => { if (!mini) return; if (e.code === 'KeyE' && !e.repeat) miniTecla(true); if (e.code === 'Escape') { const livre = mini.livre; fechaMini(); if (livre) { inicio.style.display = 'flex'; SOM.ambiente(false); SOM.menu(true); } }
+addEventListener('keydown', e => { if (!mini || pausado()) return; if (e.code === 'KeyE' && !e.repeat) miniTecla(true); if (e.code === 'Escape') { const livre = mini.livre; fechaMini(); if (livre) { inicio.style.display = 'flex'; SOM.ambiente(false); SOM.menu(true); } }
   const map = { ArrowUp: 'ArrowUp', KeyW: 'ArrowUp', ArrowDown: 'ArrowDown', KeyS: 'ArrowDown', ArrowLeft: 'ArrowLeft', KeyA: 'ArrowLeft', ArrowRight: 'ArrowRight', KeyD: 'ArrowRight' };
   if (map[e.code] && !e.repeat) miniSeta(map[e.code]);
   e.stopImmediatePropagation(); }, true);
-addEventListener('keyup', e => { if (!mini) return; if (e.code === 'KeyE') miniTecla(false); e.stopImmediatePropagation(); }, true);
+addEventListener('keyup', e => { teclas[e.code] = false; if (!mini) return; if (e.code === 'KeyE') miniTecla(false); e.stopImmediatePropagation(); }, true);
 
 // ---------- HUD ----------
 const avisoEl = document.getElementById('aviso');
@@ -2893,9 +2990,24 @@ function desenhaMinimapa() {
   mctx.save(); mctx.translate(px, py); mctx.rotate(-estado.yaw + Math.PI / 2);
   mctx.fillStyle = '#ffd54a'; mctx.beginPath(); mctx.moveTo(6, 0); mctx.lineTo(-4, -4); mctx.lineTo(-4, 4); mctx.closePath(); mctx.fill(); mctx.restore();
   for (const j of jogadores) if (j.mesh) { const [a, b] = mmTx(j.pos.x, -j.pos.z); mctx.fillStyle = j.cor; mctx.beginPath(); mctx.arc(a, b, 3, 0, 6.3); mctx.fill(); }
-  // objetivos pendentes
+  // lenha que ainda dá pra pegar (só existe enquanto a missão está ativa)
   mctx.fillStyle = '#ff5d5d';
-  for (const i of interativos) if (i.r > 0 && /Lenha/i.test(i.nome)) { const [a, b] = mmTx(i.x, -i.z); mctx.beginPath(); mctx.arc(a, b, 2.5, 0, 6.3); mctx.fill(); }
+  for (const i of interativos) if (i.r > 0 && /Lenha/i.test(i.nome) && (!i.cond || i.cond())) { const [a, b] = mmTx(i.x, -i.z); mctx.beginPath(); mctx.arc(a, b, 2.5, 0, 6.3); mctx.fill(); }
+  // marcadores: só das missões ATIVAS (o do Fantasma acompanha o cachorro)
+  for (const mk of Missoes.marcadores()) {
+    let mx = mk.x, my = mk.y;
+    if (mk.id === 'phantom' && phantom.estagio >= 1) { mx = phantom.mesh.position.x; my = -phantom.mesh.position.z; }
+    const [a, b] = mmTx(mx, my);
+    mctx.fillStyle = '#ffd54a'; mctx.strokeStyle = '#000'; mctx.lineWidth = 1;
+    mctx.beginPath(); mctx.moveTo(a, b); mctx.lineTo(a, b - 9); mctx.lineTo(a + 7, b - 7); mctx.lineTo(a, b - 5); mctx.closePath(); mctx.fill(); mctx.stroke();
+  }
+  // bússola no canto (o mapa é norte pra cima)
+  mctx.save(); mctx.translate(22, 28);
+  mctx.fillStyle = 'rgba(251,245,227,.9)'; mctx.strokeStyle = '#5a3718'; mctx.lineWidth = 2; mctx.beginPath(); mctx.arc(0, 0, 14, 0, 6.3); mctx.fill(); mctx.stroke();
+  mctx.fillStyle = '#c0392b'; mctx.beginPath(); mctx.moveTo(0, -11); mctx.lineTo(4, 0); mctx.lineTo(-4, 0); mctx.closePath(); mctx.fill();
+  mctx.fillStyle = '#555'; mctx.beginPath(); mctx.moveTo(0, 11); mctx.lineTo(4, 0); mctx.lineTo(-4, 0); mctx.closePath(); mctx.fill();
+  mctx.fillStyle = '#5a3718'; mctx.font = 'bold 9px sans-serif'; mctx.textAlign = 'center'; mctx.fillText('N', 0, -16);
+  mctx.restore();
 }
 function alternaMapa() {
   mapaGrande = !mapaGrande;
@@ -2911,8 +3023,10 @@ const teclas = {};
 function ligaSom() { SOM.liga(); if (inicio.style.display !== 'none') SOM.menu(true); }
 addEventListener('pointerdown', ligaSom); addEventListener('keydown', ligaSom, { once: false });
 addEventListener('keydown', e => {
+  if (pausado()) { if (e.code === 'Space') e.preventDefault(); return; }   // pausado: fala, minijogo e cena não andam por trás do aviso
   teclas[e.code] = true;
   if (cap2Tecla(e)) return;   // capítulo 2 (cap2.js)
+  if (e.repeat) { if (e.code === 'Space') e.preventDefault(); return; }   // segurar E pulava a história inteira; segurar M piscava o mapa
   if (e.code === 'KeyN') aviso(SOM.mudo() ? '🔇 Som desligado' : '🔊 Som ligado', 1500);
   if (e.code === 'KeyM') alternaMapa();
   if (e.code === 'KeyE') { if (cena && cena.historia) proximaFala(); else interagir(); }
@@ -2922,14 +3036,28 @@ addEventListener('keydown', e => {
   if (e.code === 'Space') e.preventDefault();
 });
 addEventListener('keyup', e => teclas[e.code] = false);
+// soltou a tecla fora da janela (Alt+Tab): sem isso o personagem saía andando sozinho
+function soltaTudo() { for (const k in teclas) teclas[k] = false; if (mini && mini.segurando) miniTecla(false); }
+addEventListener('blur', soltaTudo);
+document.addEventListener('visibilitychange', () => { if (document.hidden) soltaTudo(); });
 const inicio = document.getElementById('inicio');
 let travado = false, jogoIniciado = false;
 const pausaEl = document.getElementById('pausa');
-pausaEl.addEventListener('click', () => renderer.domElement.requestPointerLock());
-inicio.addEventListener('click', () => { renderer.domElement.requestPointerLock(); });
-renderer.domElement.addEventListener('click', () => { if (!travado) renderer.domElement.requestPointerLock(); });
+const pausado = () => pausaEl.style.display === 'flex';
+// o navegador recusa o pointer lock por ~1 s depois do Esc; aí o clique no "Pausado" caía no vazio
+let destravouEm = -1e9;
+function travar() {
+  const falta = 1100 - (performance.now() - destravouEm);
+  if (falta > 0) { setTimeout(travar, falta); return; }
+  try { const p = renderer.domElement.requestPointerLock(); if (p && p.catch) p.catch(() => aviso('Clique de novo para continuar', 1500)); } catch (e) {}
+}
+document.addEventListener('pointerlockerror', () => { if (jogoIniciado) aviso('Clique de novo para continuar', 1500); });
+pausaEl.addEventListener('click', travar);
+inicio.querySelector('.btn').addEventListener('click', travar);   // só o botão começa: clicar no resto do menu prendia o mouse
+renderer.domElement.addEventListener('click', () => { if (!travado && (jogoIniciado || DEBUG)) travar(); });
 document.addEventListener('pointerlockchange', () => {
   travado = document.pointerLockElement === renderer.domElement;
+  if (!travado) { destravouEm = performance.now(); soltaTudo(); }
   if (travado) jogoIniciado = true;
   if (travado) { SOM.menu(false); SOM.ambiente(true); pausaEl.style.display = 'none'; }
   else if (jogoIniciado) { pausaEl.style.display = 'flex'; }
@@ -2942,7 +3070,7 @@ addEventListener('mousemove', e => {
   cam.yaw -= e.movementX * 0.0025;
   cam.pitch = Math.max(-0.2, Math.min(1.2, cam.pitch + e.movementY * 0.0025));
 });
-addEventListener('wheel', e => { cam.dist = Math.max(3, Math.min(14, cam.dist + Math.sign(e.deltaY))); });
+addEventListener('wheel', e => { if (!travado) return; cam.dist = Math.max(3, Math.min(14, cam.dist + Math.sign(e.deltaY))); });
 addEventListener('resize', () => { camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix(); renderer.setSize(innerWidth, innerHeight); });
 
 function interativoProximo() {
@@ -2954,19 +3082,33 @@ function interativoProximo() {
   }
   return melhor;
 }
-function interagir() { const i = interativoProximo(); if (i) { try { i.acao(); } catch (e) { console.error(e); if (DEBUG) aviso('ERRO em "' + i.nome + '": ' + e.message, 4000); } } }
+function interagir() { if (cena || mini || escolhendoDestino) return; const i = interativoProximo(); if (i) { try { i.acao(); } catch (e) { console.error(e); if (DEBUG) aviso('ERRO em "' + i.nome + '": ' + e.message, 4000); } } }
 
 // ---------- física simples ----------
 function emTerra(x, z) {
   const y = -z;
+  if (x < REL.x0 + 4 || x > REL.x1 - 4 || y < REL.y0 + 4 || y > REL.y1 - 4) return false;   // fora do relevo o jogador flutuava no continente
   return pontoNoPoligono(x, y, MAPA.camping) || pontoNoPoligono(x, y, MAPA.iate) || pontoNoPoligono(x, y, MAPA.continente) || (typeof sobrePonte === 'function' && !!sobrePonte(x, z));
 }
 function naAguaRasa(x, z) { return pontoNoPoligono(x, -z, MAPA.raso); }
+// anda em pedaços de no máximo 0,25 m, batendo nos obstáculos a cada pedaço: correndo com turbo ou mod de velocidade dava pra atravessar parede
+function andaEmPassos(p, mx, mz, colide = true) {
+  const pode = (x, z) => emTerra(x, z) || naAguaRasa(x, z);
+  const n = Math.max(1, Math.ceil(Math.hypot(mx, mz) / 0.25)), sx = mx / n, sz = mz / n;
+  for (let k = 0; k < n; k++) {
+    const nx = p.x + sx, nz = p.z + sz;
+    if (pode(nx, nz)) { p.x = nx; p.z = nz; }
+    else if (pode(nx, p.z)) p.x = nx;
+    else if (pode(p.x, nz)) p.z = nz;
+    if (colide && n > 1) resolveColisoes(p);
+  }
+}
 function resolveColisoes(p) {
   const R = 0.45;
   for (const o of obstaculos) {
     if (Math.abs(o.x - p.x) > 30 || Math.abs(o.z - p.z) > 30) continue;
     if (o.r !== undefined) {
+      if (o.r <= 0) continue;   // colisor desligado (NPC escondido, Fantasma que saiu): antes ainda empurrava como poste invisível
       const dx = p.x - o.x, dz = p.z - o.z, d = Math.hypot(dx, dz), min = o.r + R;
       if (d < min && d > 1e-4) { p.x += dx / d * (min - d); p.z += dz / d * (min - d); }
     } else {
@@ -3007,19 +3149,31 @@ if (DEBUG) {
   if (qs.get('pz')) { try { Object.assign(personalizacao[personagemId], JSON.parse(qs.get('pz'))); } catch (e) {} escolhePersonagem(personagemId); }
   if (qs.get('bone')) { personalizacao[personagemId].boneEstilo = qs.get('bone'); if (qs.get('mochila')) personalizacao[personagemId].corMochila = '#' + qs.get('mochila'); escolhePersonagem(personagemId); }
   if (qs.get('emote')) aplicaEmote(jogador, qs.get('emote'), 0);
-  if (qs.has('intro')) iniciaIntro(); else introFeita = true;
+  if (qs.has('intro')) iniciaIntro(); else { introFeita = true; Missoes.da('chefe'); }
+  if (qs.get('missao')) atalhoMissoes(qs.get('missao'));
+  if (qs.has('fichas')) {
+    // teste de reconhecimento (issue #4): todo mundo em fila a 5 m da câmera; &nomes mostra quem é quem
+    const ids = Object.keys(FICHAS), x0 = estado.pos.x - (ids.length - 1) * 0.65, z0 = estado.pos.z - 5;
+    ids.forEach((id, i) => {
+      const x = x0 + i * 1.3, m = escoteiro(PERSONAGENS[id] ? optsPersonagem(id) : Object.assign({}, FICHAS[id].ficha));
+      m.position.set(x, alt(x, z0), z0); scene.add(m);
+      if (FICHAS[id].ficha.brabinho) aplicaEmote(m, 'bravo', 0); if (FICHAS[id].ficha.serio) aplicaEmote(m, 'serio', 0);
+      if (qs.has('nomes')) placaLivre(FICHAS[id].nome, x, -z0, 1.2, 0, 2.4);
+    });
+    jogador.visible = false; cam.yaw = 0; cam.pitch = 0.05; cam.dist = 4;
+  }
   if (qs.has('caes')) { mostraCachorros(); alissonFalou = true; }
-  if (qs.has('dia2')) { for (const m of missoes) m.ok = true; estado.temPederneira = true; sede.chamas.visible = true; mostraCachorros(); alissonFalou = true; phantom.estagio = 4; iniciaDia2(); if (qs.get('dia2') === 'obras') { completa('diego2'); missoes.push({ id: 'sonho', ok: true, txt: 'Falar com os 3 amigos sobre o sonho (3/3)', n: 3, falados: [] }); missoes.push({ id: 'diego3', ok: true, txt: 'Contar pro Chefe Diego que todos tiveram o mesmo sonho' }); proximoProjeto(); } }
-  if (qs.has('noite2')) { for (const m of missoes) m.ok = true; estado.temPederneira = true; sede.chamas.visible = true; mostraCachorros(); alissonFalou = true; phantom.estagio = 4; iniciaDia2(); completa('diego2'); for (const id of ['mirante', 'casa', 'sede']) { const pr = PROJETOS.find(x => x.id === id); projetos.atual = pr; constroi(pr); } projetos.atual = null; PROJETOS.forEach(p => { if (!projetos.feitos.includes(p.id)) projetos.feitos.push(p.id); }); if (qs.get('noite2') === 'psiu') { iniciaAnoitecer(); setTimeout(() => { n2.historiaContada = true; iniciaNoite2(); }, 1500); } else iniciaAnoitecer(); }
-  if (qs.has('sonho')) { for (const m of missoes) m.ok = true; estado.temPederneira = true; sede.chamas.visible = true; mostraCachorros(); alissonFalou = true; phantom.estagio = 4; cena = { amanhece: true, t: 2.9 }; fadeEl.style.opacity = 1; document.getElementById('hud').style.opacity = 0; }
+  if (qs.has('dia2')) { atalhoMissoes('tudo'); iniciaDia2(); if (qs.get('dia2') === 'obras') { completa('diego2'); missoes.push({ id: 'sonho', ok: true, txt: 'Falar com os 3 amigos sobre o sonho (3/3)', n: 3, falados: [] }); missoes.push({ id: 'diego3', ok: true, txt: 'Contar pro Chefe Diego que todos tiveram o mesmo sonho' }); proximoProjeto(); } }
+  if (qs.has('noite2')) { atalhoMissoes('tudo'); iniciaDia2(); completa('diego2'); for (const id of ['mirante', 'casa', 'sede']) { const pr = PROJETOS.find(x => x.id === id); projetos.atual = pr; constroi(pr); } projetos.atual = null; PROJETOS.forEach(p => { if (!projetos.feitos.includes(p.id)) projetos.feitos.push(p.id); }); if (qs.get('noite2') === 'psiu') { iniciaAnoitecer(); setTimeout(() => { n2.historiaContada = true; iniciaNoite2(); }, 1500); } else iniciaAnoitecer(); }
+  if (qs.has('sonho')) { atalhoMissoes('tudo'); cena = { amanhece: true, t: 2.9 }; fadeEl.style.opacity = 1; document.getElementById('hud').style.opacity = 0; }
   if (qs.has('hab')) usaHabilidade({ id: personagemId, pos: estado.pos, mesh: jogador, p1: true });
   if (qs.get('constroi')) { for (const id of qs.get('constroi').split(',')) { const pr = PROJETOS.find(x => x.id === id); if (pr) { projetos.atual = pr; constroi(pr); } } }
   if (qs.get('mini')) setTimeout(() => { abreMini(qs.get('mini'), [qs.get('mini'), 4, 'Teste']); }, 1500);
   if (qs.has('aspira')) setTimeout(() => { for (const id of ['risada', 'luz', 'batidas']) { const m = missoes.find(x => x.id === id); if (m) m.ok = true; } lencol.position.set(estado.pos.x + 4, 0.3, estado.pos.z); lencol.visible = true; capituloNoite.revelado = true; cutsceneAspirador(); }, 300);
   if (qs.has('noite')) {
     // dia já concluído: missões marcadas, pederneira, fogueira acesa, Fantasma encontrado, bandeira hasteada
-    for (const m of missoes) m.ok = true; renderMissoes(); estado.temPederneira = true; sede.chamas.visible = true; bandeiraAlvo = 5.4; bandeiraAlt = 5.4;
-    mostraCachorros(); alissonFalou = true; phantom.estagio = 4; phantom.mesh.position.set(ALISSON[0] + 1.5, altO(ALISSON[0] + 1.5, ALISSON[1] - 1), -ALISSON[1] + 1);
+    atalhoMissoes('tudo');
+    phantom.mesh.position.set(ALISSON[0] + 1.5, altO(ALISSON[0] + 1.5, ALISSON[1] - 1), -ALISSON[1] + 1);
     iniciaNoite(); if (qs.get('noite') !== 'cena') { cena.t = 5.9; atualizaNoiteIntro(0.01); if (qs.get('pos')) { const [x, y] = qs.get('pos').split(',').map(Number); estado.pos.set(x, 0, -y); } }
   }
   (qs.get('extras') || '').split(',').filter(Boolean).forEach(id => { novoJogador(-1 - jogadores.length); const j = jogadores[jogadores.length - 1]; j.opcao = Math.max(0, j.livres.indexOf(id)); confirmaJogador(j); j.camera.position.set(j.pos.x + 4, 3, j.pos.z + 6); j.camera.lookAt(j.pos); });
@@ -3032,9 +3186,69 @@ if (DEBUG) {
   if (qs.get('fala')) setTimeout(() => aviso(qs.get('fala') + ': "Bem-vindo, lobinho! A Akelá está esperando a alcateia na árvore do lobinhos.com, em frente à cantina, pra fazer a bandeira."', 6000), 0); if (qs.get('fala')) balaoEl.style.transition = avisoEl.style.transition = 'none';
   if (qs.has('mostrapos')) setInterval(() => { document.title = `pos ${estado.pos.x.toFixed(1)},${(-estado.pos.z).toFixed(1)}`; localEl.textContent += ` | ${estado.pos.x.toFixed(1)}, ${(-estado.pos.z).toFixed(1)}`; }, 200);
 }
+// ---------- lenço, poeira, areia, respingos e pegadas ----------
+function balancaLenco(u, k, dt) {   // k: 0 parado .. 1 correndo
+  if (!u.lenco) return;
+  const alvo = -(0.12 + 0.35 * k) - Math.sin(tempo * (8 + 10 * k)) * (0.04 + 0.14 * k) * ventoU.uVento.value;
+  u.lenco.rotation.x += (alvo - u.lenco.rotation.x) * Math.min(1, dt * 10);
+  u.lenco.rotation.z = Math.sin(tempo * 6.3) * 0.08 * k;
+}
+const PART_N = 100, PEG_N = 60, mZero = new THREE.Matrix4().makeScale(0, 0, 0), mTmp = new THREE.Matrix4(), qTmp = new THREE.Quaternion(), vTmp = new THREE.Vector3(), sTmp = new THREE.Vector3(), eTmp = new THREE.Euler();
+const partMesh = new THREE.InstancedMesh(new THREE.TetrahedronGeometry(0.1), new THREE.MeshLambertMaterial({ color: 0xffffff }), PART_N);
+const pegGeo = new THREE.CircleGeometry(0.1, 8); pegGeo.rotateX(-Math.PI / 2); pegGeo.scale(0.75, 1, 1.3);
+const pegMesh = new THREE.InstancedMesh(pegGeo, new THREE.MeshLambertMaterial({ color: 0xa88a58, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 }), PEG_N);
+partMesh.frustumCulled = pegMesh.frustumCulled = false;
+for (let i = 0; i < PART_N; i++) { partMesh.setMatrixAt(i, mZero); partMesh.setColorAt(i, new THREE.Color(1, 1, 1)); }
+for (let i = 0; i < PEG_N; i++) pegMesh.setMatrixAt(i, mZero);
+scene.add(partMesh, pegMesh);
+const parts = Array.from({ length: PART_N }, () => ({ vida: 0, t0: 1, x: 0, y: 0, z: 0, vx: 0, vy: 0, vz: 0, g: 0, tipo: '' }));
+const pegadas = Array.from({ length: PEG_N }, () => ({ vida: 0 }));
+let partI = 0, pegI = 0;
+const COR_PART = { agua: new THREE.Color(0xdff4ff), areia: new THREE.Color(0xe3cf98), poeira: new THREE.Color(0x9a7a55) };
+function emitePasso(q, correndo, nadando) {   // q: estado do J1 ou um jogador extra (pos, yaw)
+  const x = q.pos.x, z = q.pos.z;
+  const tipo = nadando ? 'agua' : pontoNoPoligono(x, -z, MAPA.praia) ? 'areia' : correndo ? 'poeira' : null;
+  if (!tipo) return;
+  const y0 = nadando ? -0.42 : q.pos.y + 0.05;
+  for (let k = tipo === 'agua' ? 7 : 4; k > 0; k--) {
+    const p = parts[partI];
+    Object.assign(p, { tipo, vida: tipo === 'agua' ? 0.7 : 0.9, x: x + rnd(-0.2, 0.2), y: y0, z: z + rnd(-0.2, 0.2), vx: rnd(-0.9, 0.9), vz: rnd(-0.9, 0.9), vy: tipo === 'agua' ? rnd(2, 3.4) : rnd(0.3, 1.1), g: tipo === 'agua' ? 9 : 0.5 });
+    p.t0 = p.vida; partMesh.setColorAt(partI, COR_PART[tipo]); partI = (partI + 1) % PART_N;
+  }
+  partMesh.instanceColor.needsUpdate = true;
+  if (tipo === 'areia') {   // pegada alternando pé esquerdo/direito
+    q.ladoPe = -(q.ladoPe || 1);
+    const yaw = q.yaw || 0, px = x + Math.cos(yaw) * 0.13 * q.ladoPe, pz = z - Math.sin(yaw) * 0.13 * q.ladoPe;
+    Object.assign(pegadas[pegI], { vida: 8, x: px, y: alt(px, pz) + 0.02, z: pz, yaw }); pegI = (pegI + 1) % PEG_N;
+  }
+}
+function atualizaEfeitos(dt) {
+  let mexeu = false;
+  for (let i = 0; i < PART_N; i++) {
+    const p = parts[i]; if (p.vida <= 0) continue;
+    p.vida -= dt; mexeu = true;
+    if (p.vida <= 0) { partMesh.setMatrixAt(i, mZero); continue; }
+    p.vy -= p.g * dt; p.x += p.vx * dt; p.y += p.vy * dt; p.z += p.vz * dt;
+    if (p.tipo !== 'agua') { p.vx *= 0.94; p.vz *= 0.94; p.vy *= 0.95; }
+    const idade = 1 - p.vida / p.t0, esc = p.tipo === 'agua' ? 1 - idade * 0.7 : 0.6 + idade * 1.6 * (1 - idade);
+    mTmp.compose(vTmp.set(p.x, p.y, p.z), qTmp.setFromEuler(eTmp.set(p.vida * 5, p.vida * 3, 0)), sTmp.setScalar(Math.max(0.01, esc)));
+    partMesh.setMatrixAt(i, mTmp);
+  }
+  if (mexeu) partMesh.instanceMatrix.needsUpdate = true;
+  let mexeuP = false;
+  for (let i = 0; i < PEG_N; i++) {
+    const g = pegadas[i]; if (g.vida <= 0) continue;
+    g.vida -= dt; mexeuP = true;
+    const e = g.vida <= 0 ? 0 : Math.min(1, g.vida / 2.5);   // some nos últimos 2,5 s
+    mTmp.compose(vTmp.set(g.x, g.y, g.z), qTmp.setFromEuler(eTmp.set(0, g.yaw, 0)), sTmp.setScalar(e));
+    pegMesh.setMatrixAt(i, e ? mTmp : mZero);
+  }
+  if (mexeuP) pegMesh.instanceMatrix.needsUpdate = true;
+}
+
 function animar() {
   requestAnimationFrame(animar);
-  const dt = Math.min(relogio.getDelta(), 0.05);
+  const dt = pausado() ? (relogio.getDelta(), 0) : Math.min(relogio.getDelta(), 0.05);   // pausado: o peixe não foge, a pipa não cai
   tempo += dt;
   procuraNovosPads();
   for (const j of jogadores.slice()) atualizaExtra(j, dt);
@@ -3081,10 +3295,7 @@ function animar() {
     estado.yaw += d * Math.min(1, dt * 12);
     // cada passo empurra o jogador pra frente: a velocidade pulsa com o ciclo das pernas
     const impulso = nadando ? 1 : 0.93 + 0.14 * Math.abs(Math.sin(estado.fase));
-    const nova = estado.pos.clone(); nova.x += dx * vel * impulso * dt; nova.z += dz * vel * impulso * dt;
-    if (emTerra(nova.x, nova.z) || naAguaRasa(nova.x, nova.z)) { estado.pos.x = nova.x; estado.pos.z = nova.z; }
-    else if (emTerra(nova.x, estado.pos.z) || naAguaRasa(nova.x, estado.pos.z)) estado.pos.x = nova.x;
-    else if (emTerra(estado.pos.x, nova.z) || naAguaRasa(estado.pos.x, nova.z)) estado.pos.z = nova.z;
+    andaEmPassos(estado.pos, dx * vel * impulso * dt, dz * vel * impulso * dt, !cena);
   }
   if (!cena) resolveColisoes(estado.pos);
   // segurança: se acabar fora de terra (sem estar nadando/escalando/na ponte), volta pro ponto de terra mais próximo
@@ -3126,7 +3337,6 @@ function animar() {
     else if (estado.pos.y > chao + 0.05) estado.noChao = false;
   }
   jogador.position.copy(estado.pos); jogador.rotation.y = estado.yaw;
-  if (jogador.scale.x !== MOD.escala) jogador.scale.setScalar(MOD.escala);
   if (typeof atualizaMods === 'function') atualizaMods(dt);
   if (movendo && estado.noChao && !nadando) jogador.position.y += Math.abs(Math.sin(estado.fase)) * 0.03; // balanço suave do passo
 
@@ -3134,7 +3344,7 @@ function animar() {
   estado.velAnim += ((movendo ? (vel > 5 ? 14 : 9) : 0) - estado.velAnim) * Math.min(1, dt * 8);
   const faseAntes = estado.fase;
   estado.fase += estado.velAnim * dt;
-  if (movendo && estado.noChao && Math.floor(faseAntes / Math.PI) !== Math.floor(estado.fase / Math.PI)) SOM.passo(vel > 5, nadando);
+  if (movendo && estado.noChao && Math.floor(faseAntes / Math.PI) !== Math.floor(estado.fase / Math.PI)) { SOM.passo(vel > 5, nadando); emitePasso(estado, vel > 5, nadando); }
   if (estado.escalando) estado.fase += dt * 8;
   const amp0 = estado.macrame && estado.macrame.fase !== 'tece' ? 0.6 : 0;
   const andandoCena = !!(cena && cena.andando); if (andandoCena) estado.fase += dt * 3;
@@ -3151,49 +3361,82 @@ function animar() {
   else if (estado.escalando) { u.bracoE.rotation.x = -2.6 + sw * 0.5; u.bracoD.rotation.x = -2.6 - sw * 0.5; }
   else if (!movendo && !andandoCena) { u.pernaE.rotation.x *= 0.9; u.pernaD.rotation.x *= 0.9; u.bracoE.rotation.x = Math.sin(tempo * 2) * 0.05; u.bracoD.rotation.x = -u.bracoE.rotation.x; }
 
+  // pulo e nado com pose, lenço balançando e "esticar e amassar" (o tamanho da ficha vem de userData.escala)
+  const livreAnim = !cena && !mini && !estado.escalando && !estado.macrame;
+  const noAr = livreAnim && !estado.noChao && !nadando;
+  if (noAr) {   // braços pra cima, pernas dobradas
+    const k = Math.min(1, dt * 12);
+    u.bracoE.rotation.x += (-2.5 - u.bracoE.rotation.x) * k; u.bracoD.rotation.x += (-2.3 - u.bracoD.rotation.x) * k;
+    u.pernaE.rotation.x += (-0.9 - u.pernaE.rotation.x) * k; u.pernaD.rotation.x += (0.35 - u.pernaD.rotation.x) * k;
+  } else if (livreAnim && nadando) {   // crawl: braços dando a volta inteira, pernas batendo
+    const f = estado.fase * 0.5 + tempo * 2.6;
+    u.bracoE.rotation.x = -(f % 6.283); u.bracoD.rotation.x = -((f + Math.PI) % 6.283);
+    u.pernaE.rotation.x = Math.sin(tempo * 14) * 0.3; u.pernaD.rotation.x = -u.pernaE.rotation.x;
+  }
+  u.inclina = (u.inclina || 0) + ((livreAnim && nadando ? 1.2 : 0) - (u.inclina || 0)) * Math.min(1, dt * 6);   // deitado na água
+  if (u.inclina > 0.002) { jogador.rotation.order = 'YXZ'; jogador.rotation.x = u.inclina; } else if (jogador.rotation.x) jogador.rotation.x = 0;
+  if (estado.noChao && u.noArAntes && !nadando) u.estica = 0.84;   // pousou: amassa
+  u.noArAntes = noAr;
+  u.estica = (u.estica || 1) + ((noAr && estado.vy > 0 ? 1.08 : 1) - (u.estica || 1)) * Math.min(1, dt * 10);
+  { const esc = (u.escala || 1) * MOD.escala, lado = 1 + (1 - u.estica) * 0.5; jogador.scale.set(esc * lado, esc * u.estica, esc * lado); }
+  balancaLenco(u, estado.velAnim / 14, dt);
+
   // câmera
   if (naPlataforma() || estado.escalando || estado.poleiro || estado.macrame) cam.pitch = Math.min(cam.pitch, 0.15);
+  // em piso elevado (plataforma da árvore, copa, ponte) a câmera olhando de baixo mostrava o fundo do piso
+  const elevado = naPlataforma() || !!estado.poleiro || !!sobrePonte(estado.pos.x, estado.pos.z);
+  if (elevado) cam.pitch = Math.max(cam.pitch, 0.02);
   const alvoCam = estado.pos.clone().add(new THREE.Vector3(0, 1.5, 0));
   const off = new THREE.Vector3(Math.sin(cam.yaw) * Math.cos(cam.pitch), Math.sin(cam.pitch), Math.cos(cam.yaw) * Math.cos(cam.pitch)).multiplyScalar(cam.dist);
   // câmera não atravessa troncos/paredes: encurta a distância se algo estiver no caminho
   let distCam = cam.dist;
   for (const o of obstaculos) {
-    if (o.r === undefined || Math.abs(o.x - alvoCam.x) > 16 || Math.abs(o.z - alvoCam.z) > 16) continue;
+    if (o.r === undefined || o.r <= 0 || Math.abs(o.x - alvoCam.x) > 16 || Math.abs(o.z - alvoCam.z) > 16) continue;
     const dx = off.x / cam.dist, dz = off.z / cam.dist, hl = Math.hypot(dx, dz);
     if (hl < 1e-3) continue;
     const t = ((o.x - alvoCam.x) * dx + (o.z - alvoCam.z) * dz) / (hl * hl);
     if (t <= 0 || t > cam.dist) continue;
     const cx = alvoCam.x + dx * t, cz = alvoCam.z + dz * t;
-    if (Math.hypot(cx - o.x, cz - o.z) < o.r + 0.35) distCam = Math.min(distCam, Math.max(1.5, t - o.r - 0.6));
+    if (Math.hypot(cx - o.x, cz - o.z) < o.r + 0.35) distCam = Math.min(distCam, Math.max(0.9, t - o.r - 0.6));
   }
   // paredes (caixas): anda pelo segmento e para antes de entrar numa construção
-  for (let t = 1; t < distCam; t += 0.5) {
+  for (let t = 0.5; t < distCam; t += 0.25) {   // começava em 1 m: encostado na parede a câmera já nascia do outro lado
     const px = alvoCam.x + off.x / cam.dist * t, pz = alvoCam.z + off.z / cam.dist * t, py = alvoCam.y + off.y / cam.dist * t;
     if (py > 6) break;
     let dentro = false;
     for (const o of obstaculos) {
       if (o.r !== undefined || Math.abs(o.x - px) > 20 || Math.abs(o.z - pz) > 20 || o.hw < 1.5) continue;
+      if (o.h !== undefined && py - alt(px, pz) > o.h + 0.3) continue;   // obstáculo baixo (cancha): a câmera passa por cima
       const c = Math.cos(o.rot), sn = Math.sin(o.rot), dx = px - o.x, dz = pz - o.z;
       const lx = dx * c - dz * sn, lz = dx * sn + dz * c;
       if (Math.abs(lx) < o.hw + 0.3 && Math.abs(lz) < o.hd + 0.3) { dentro = true; break; }
     }
-    if (dentro) { distCam = Math.max(1.2, t - 0.6); break; }
+    if (dentro) { distCam = Math.max(0.9, t - 0.4); break; }
   }
   const posCam = alvoCam.clone().add(off.clone().multiplyScalar(distCam / cam.dist));
-  { const ac = alt(posCam.x, posCam.z) + 0.6; if (posCam.y < ac) posCam.y = ac; }
-    camera.position.lerp(posCam, DEBUG ? 1 : Math.min(1, dt * 16));
+  const chaoCam = p => { let ac = alt(p.x, p.z) + 0.6; if (elevado) ac = Math.max(ac, estado.pos.y + 0.4); if (p.y < ac) p.y = ac; };
+  chaoCam(posCam);
+  // aproxima na hora (senão passa uns quadros dentro da parede) e afasta suave
+  const encurtou = posCam.distanceTo(alvoCam) < camera.position.distanceTo(alvoCam) - 0.05;
+  camera.position.lerp(posCam, (DEBUG || encurtou) ? 1 : Math.min(1, dt * 16));
+  chaoCam(camera.position);
   camera.lookAt(alvoCam);
   if (cena) cameraDaCena();
   if (DEBUG && qs.has('top')) { camera.position.set(estado.pos.x, +qs.get('top') || 300, estado.pos.z + 1); camera.lookAt(estado.pos); }
 
   // sombra acompanha o jogador
-  sol.position.set(estado.pos.x - 80, 140, estado.pos.z + 60); sol.target.position.copy(estado.pos);
+  andaHora(dt); aguaU.uTempo.value = tempo; atualizaEfeitos(dt);
+  ventoU.uTempo.value = tempo; ventoU.uVento.value = 0.7 + 1.6 * Math.pow(Math.max(0, Math.sin(tempo * 0.045)), 6);   // rajadas de minuano de vez em quando
+  sol.position.set(estado.pos.x - 80, solAltura, estado.pos.z + 60); sol.target.position.copy(estado.pos);
+  if (discoSol.visible) discoSol.position.set(estado.pos.x - 80 * 7, solAltura * 7 - 30, estado.pos.z + 60 * 7);   // longe, na direção da luz
 
   // bandeira, fogueira, farol, água
   bandeiraAlt += (bandeiraAlvo - bandeiraAlt) * Math.min(1, dt * 2);
   bandeira.position.y = bandeiraAlt; bandeira.rotation.y = Math.sin(tempo * 1.5) * 0.15;
+  // crepitar só perto da fogueira (antes tocava no mapa inteiro, pra sempre, até no menu)
+  SOM.fogueira(jogoIniciado && sede.chamas.visible && Math.hypot(estado.pos.x - sede.fogueiraPos[0], estado.pos.z + sede.fogueiraPos[1]) < 40);
   if (sede.chamas.visible) { sede.chamas.children.forEach((c, i) => { if (c.isMesh) { c.scale.y = 0.8 + Math.sin(tempo * 9 + i) * 0.3; c.rotation.y += dt * 2; } else c.intensity = 1.6 + Math.sin(tempo * 12) * 0.4; }); }
-  M.agua.color.setHSL(0.57, 0.62, 0.31 + Math.sin(tempo * 0.7) * 0.015);
+  if (!aguaNoite && hora === 0) M.agua.color.setHSL(0.57, 0.62, 0.31 + Math.sin(tempo * 0.7) * 0.015);   // de noite desfazia a cor escura
 
   // cachorros: rabo abanando, e o Fantasma segue o jogador quando encontrado
   for (const c of cachorros) {
@@ -3209,10 +3452,10 @@ function animar() {
       c.mesh.position.y = alt(c.mesh.position.x, c.mesh.position.z);
       const sw = c.vel > 0.3 ? Math.sin(c.fase * 2.5) * 0.7 : 0;
       c.pernas.forEach((p, i) => p.rotation.x = (i % 2 ? sw : -sw));
-      if (c === phantom && Math.hypot(c.mesh.position.x - ALISSON[0], c.mesh.position.z + ALISSON[1]) < 6 && !missoes.find(z => z.id === 'phantom').ok) {
+      if (c === phantom && capAtual() === 1 && Math.hypot(c.mesh.position.x - ALISSON[0], c.mesh.position.z + ALISSON[1]) < 6 && !Missoes.concluida('phantom')) {
         c.seguindo = false; c.estagio = 4; c.mesh.position.set(ALISSON[0] + 1.5, altO(ALISSON[0] + 1.5, ALISSON[1] - 1), -ALISSON[1] + 1); c.mesh.rotation.y = 2.6; c.vel = 0; c.pernas.forEach(p => p.rotation.x = 0);
         aviso('Alisson: "FANTASMAAA! Aeee, ' + PERSONAGENS[personagemId].nome + ', cê achou ele, valeu demais! Ele é do camping, mas hoje ele fica com a gente. E ó, ele deixa montar nele, tá ligado?" 🐕🐺', 6500);
-        completa('phantom');
+        VARS_DIALOGO.fantasma = 4; completa('phantom');
       }
     } else if (c.vel === 0 && !(c === phantom && c.estagio >= 4)) {
       c.pernas.forEach(p => p.rotation.x = 0);
@@ -3236,10 +3479,9 @@ function animar() {
       const u = n.mesh.userData; u.bracoE.rotation.x = Math.sin(tempo * 10) * 1.2 - 1.2; u.bracoD.rotation.x = -Math.sin(tempo * 10) * 1.2 - 1.2; u.bracoE.rotation.z = 0.6; u.bracoD.rotation.z = -0.6;
     } const d = Math.hypot(estado.pos.x - n.mesh.position.x, estado.pos.z - n.mesh.position.z); if (d < 8) n.mesh.rotation.y = Math.atan2(estado.pos.x - n.mesh.position.x, estado.pos.z - n.mesh.position.z); }
 
-  // missões por localização
+  // missões de "chegar num lugar" (só elas terminam por posição)
   const ox = estado.pos.x, oy = -estado.pos.z;
-  if (pontoNoPoligono(ox, oy, MAPA.praia)) completa('praia');
-  if (Math.hypot(ox - 244, oy + 130) < 14) completa('molhe');
+  if (!cena) Missoes.chegou(ox, oy);
 
   // HUD
   let nomeLocal = 'Camping Municipal';

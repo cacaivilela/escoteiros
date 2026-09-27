@@ -15,7 +15,7 @@ const SKINS_CATALOGO = [
   { id: 'laraNoite', nome: 'Lara da Noite', emoji: '🌙', perso: 'lara', desc: 'Tudo escuro com tiara roxa.', valores: { boneEstilo: 'tiara', corTiara: '#9b3fb5', corCamisa: '#1a1a2e', corShort: '#0d0d1a', corTenis: '#9b3fb5', corBolsa: '#2a2a4a' } },
   { id: 'caioBandana', nome: 'Caio Pirata', emoji: '🏴‍☠️', perso: 'caio', desc: 'Bandana preta, camisa listrada de vermelho.', valores: { boneEstilo: 'bandana', corBandana: '#111111', corCamisa: '#b0202a', corShort: '#222222', corTenis: '#111111', corMochila: '#5a3a1e', oculos: true } },
   { id: 'caioNeon', nome: 'Caio Neon', emoji: '🟢', perso: 'caio', desc: 'Verde-limão e roxo brilhante.', valores: { corCamisa: '#8bff3a', corShort: '#6a1fb5', corTenis: '#8bff3a', corMochila: '#6a1fb5', corBaquetas: '#8bff3a', relogio: true } },
-  { id: 'duduAura', nome: 'Dudu Aura 67', emoji: '✨', perso: 'dudu', desc: 'Óculos quadrados, dourado e aura ligada.', valores: { oculosEstilo: 'quadrado', corOculos: '#ffd54a', corCamisa: '#ffd54a', corShort: '#222222', corTenis: '#ffd54a', aura: true } },
+  { id: 'duduAura', nome: 'Dudu Aura 42', emoji: '✨', perso: 'dudu', desc: 'Óculos quadrados, dourado e aura ligada.', valores: { oculosEstilo: 'quadrado', corOculos: '#ffd54a', corCamisa: '#ffd54a', corShort: '#222222', corTenis: '#ffd54a', aura: true } },
   { id: 'mariaRosa', nome: 'Maria Rosa-choque', emoji: '🎀', perso: 'maria', desc: 'Coque com laço rosa e tudo rosa.', valores: { estiloCabelo: 'coque', corLaco: '#ff4fa3', boneEstilo: 'tiara', corCamisa: '#ff4fa3', corShort: '#8a1f5a', corTenis: '#ffffff', pulseira: '#ff4fa3' } },
 ];
 const DLC_INFO = { id: 'mega', nome: 'DLC Mega Camping', emoji: '🎒', tam: '312 MB', desc: '40 capítulos novos (5 a 44), 55 minijogos, 12 bichos do Pampa soltos pelo camping e 4 skins exclusivas.',
@@ -56,11 +56,12 @@ function dlcCapitulo(n) {   // tarefas geradas de forma determinística pelo nú
   const r = (k, m) => ((n * 2654435761 + k * 40503) >>> 0) % m;
   const t = [];
   t.push({ tipo: 'falar', quem: 'Akelá', txt: 'Falar com a Akelá na árvore do lobinhos.com' });
-  const l1 = DLC_LUGARES[r(1, DLC_LUGARES.length)]; t.push({ tipo: 'ir', x: l1[1], y: l1[2], txt: 'Ir até: ' + l1[0] });
+  const longe = DLC_LUGARES.filter(l => Math.hypot(l[1] - ARV_BAND[0], l[2] - ARV_BAND[1]) > 25);   // perto da Akelá o "ir até" concluía sozinho
+  const i1 = r(1, longe.length), l1 = longe[i1]; t.push({ tipo: 'ir', x: l1[1], y: l1[2], txt: 'Ir até: ' + l1[0] });
   const m1 = DLC_MINIS[r(2, 55)]; t.push({ tipo: 'mini', mini: m1, txt: m1.emoji + ' ' + m1.nome + ' (' + DLC_LUGARES[m1.lugar][0] + ')' });
   const b = DLC_BICHOS[r(3, 12)]; t.push({ tipo: 'bicho', bicho: b[0], txt: b[1] + ' Encontrar e observar: ' + b[0] });
   if (n % 2) { const m2 = DLC_MINIS[r(4, 55)]; t.push({ tipo: 'mini', mini: m2, txt: m2.emoji + ' ' + m2.nome + ' (' + DLC_LUGARES[m2.lugar][0] + ')' }); }
-  if (n % 3 === 0) { const l2 = DLC_LUGARES[r(5, DLC_LUGARES.length)]; t.push({ tipo: 'ir', x: l2[1], y: l2[2], txt: 'Ir até: ' + l2[0] }); }
+  if (n % 3 === 0) { const l2 = longe[(i1 + 1 + r(5, longe.length - 1)) % longe.length]; t.push({ tipo: 'ir', x: l2[1], y: l2[2], txt: 'Ir até: ' + l2[0] }); }
   t.push({ tipo: 'falar', quem: 'Chefe Diego', txt: 'Contar tudo pro Chefe Diego na portaria' });
   return { n, titulo: DLC_TITULOS[n - 5], tarefas: t };
 }
@@ -122,9 +123,12 @@ function criaBicho(b) {
 function atualizaBichos(dt) {
   for (const b of DLC.bichos) {
     b.t -= dt;
-    if (b.t <= 0) { b.t = rnd(2, 6); const nx = b.hx + rnd(-14, 14), ny = b.hy + rnd(-14, 14); if (emTerra(nx, -ny) || naAguaRasa(nx, -ny)) { b.tx = nx; b.ty = ny; } }
+    if (b.t <= 0) { b.t = rnd(2, 6); const nx = b.hx + rnd(-14, 14), ny = b.hy + rnd(-14, 14); if (emTerra(nx, -ny)) { b.tx = nx; b.ty = ny; } }   // na água ficava flutuando
     const dx = b.tx - b.x, dy = b.ty - b.y, d = Math.hypot(dx, dy);
-    if (d > 0.3) { b.x += dx / d * b.vel * dt; b.y += dy / d * b.vel * dt; b.mesh.rotation.y = Math.atan2(dx, -dy); b.fase += dt * 8; }
+    if (d > 0.3) {
+      const q = { x: b.x + dx / d * b.vel * dt, z: -(b.y + dy / d * b.vel * dt) }; resolveColisoes(q);   // não atravessa prédio nem árvore
+      if (emTerra(q.x, q.z)) { b.x = q.x; b.y = -q.z; b.mesh.rotation.y = Math.atan2(dx, -dy); b.fase += dt * 8; } else { b.tx = b.x; b.ty = b.y; b.t = 0; }   // empacou: sorteia outro destino
+    }
     b.mesh.position.set(b.x, altO(b.x, b.y), -b.y);
     b.pernas.forEach((p, i) => p.rotation.x = d > 0.3 ? Math.sin(b.fase + (i % 2) * Math.PI) * 0.5 : 0);
     b.int.x = b.x; b.int.z = -b.y;
@@ -166,13 +170,13 @@ function dlcInicia(n) {
   const al = interativos.find(i => i.nome === 'Falar com Lobinho Alisson'); if (al) al.acao = () => aviso('Lobinho Alisson: "Você viu o gambá? Dizem que ele finge de morto!"', 3500);
 }
 function dlcConclui() {
-  const n = DLC.cap.n; completa('dlc' + DLC.tarefa); DLC.tarefa++;
+  const n = DLC.cap.n, titulo = DLC.cap.titulo; completa('dlc' + DLC.tarefa); DLC.tarefa++;
   if (DLC.tarefa >= DLC.cap.tarefas.length) {
     modsSt.capsFeitos[n] = true; salvaMods();
-    setTimeout(() => { aviso('🏆 Capítulo ' + n + ' — ' + DLC.cap.titulo + ' concluído!', 6000); SOM.fim(); if (n < 44) { proximoCap = n + 1; btnCap2.textContent = '▶ Capítulo ' + (n + 1) + ' — ' + DLC_TITULOS[n - 4]; btnCap2.style.display = 'block'; } }, 3200);
+    setTimeout(() => { aviso('🏆 Capítulo ' + n + ' — ' + titulo + ' concluído!', 6000); SOM.fim(); if (n < 44) { proximoCap = n + 1; btnCap2.textContent = '▶ Capítulo ' + (n + 1) + ' — ' + DLC_TITULOS[n - 4]; mostraBtnCap(); } }, 3200);
   }
 }
-{ const _ic = iniciaCapitulo; iniciaCapitulo = function () { if (capituloEscolhido >= 5) { if (!modsSt.dlc) { capituloEscolhido = 1; return _ic(); } return dlcInicia(capituloEscolhido); } if (DLC.cap) { DLC.cap = null; document.querySelector('#missao h3').textContent = 'Tarefas do acampamento'; } _ic(); }; }
+{ const _ic = iniciaCapitulo; iniciaCapitulo = function () { if (capituloEscolhido >= 5) { if (!modsSt.dlc) { capituloEscolhido = 1; return iniciaIntro(); } return dlcInicia(capituloEscolhido); } if (DLC.cap) { DLC.cap = null; document.querySelector('#missao h3').textContent = 'Tarefas do acampamento'; } _ic(); }; }
 // ---- 55 minijogos (5 mecânicas: timing, mash, seq, segurar, memoria) ----
 function abreDlcMini(m, livre) {
   if (mini || cena) return;

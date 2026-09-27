@@ -75,16 +75,16 @@ function lobinhoVisitante(x, y, rot, nome, lenco, extra) {
 function iniciaCap4() {
   if (CAP4.ativo) return;
   preparaSabado(); CAP2.ativo = false; CAP4.ativo = true;
-  if (typeof CAP3 !== 'undefined' && CAP3.ativo) { CAP3.ativo = false; if (CAP3.noite) { ligaNoite(false); noite = false; CAP3.noite = false; lampiao.visible = false; } for (const q of (CAP3.pipasNpc || [])) { q.pipa.mesh.visible = false; q.linha.visible = false; } if (CAP3.pipa) { CAP3.pipa.mesh.visible = false; CAP3.linha.visible = false; } }
+  if (typeof CAP3 !== 'undefined' && CAP3.ativo) { CAP3.ativo = false; if (CAP3.noite) { ligaNoite(false, true); noite = false; CAP3.noite = false; lampiao.visible = false; } for (const q of (CAP3.pipasNpc || [])) { q.pipa.mesh.visible = false; q.linha.visible = false; } if (CAP3.pipa) { CAP3.pipa.mesh.visible = false; CAP3.linha.visible = false; } }
   if (CAP2.cobra) { CAP2.cobra.mesh.visible = false; CAP2.cobra.mesh.userData.obst.r = 0; }
   bandeira.visible = true; bandeiraAlt = bandeiraAlvo = 5.4;
   CAP4.insignias = {}; CAP4.fase = 'abre'; CAP4.desafio = null;
   interativos.find(i => i.nome === 'Falar com Akelá').acao = c4Akela;
   interativos.find(i => i.nome === 'Falar com Chefe Diego').acao = c4Diego;
-  interativos.find(i => i.nome === 'Falar com Pai').acao = () => aviso('Pai: "' + ['Distrital de Pokémon? Na minha época era de... também era Pokémon, na verdade.', 'Cuidado com a linha da pipa... ah não, hoje é Pokémon. Vai lá pegar as insígnias.', 'Se o Dudu fizer 67 de novo eu vou embora na Trailblazer.'][Math.floor(Math.random() * 3)] + '"', 4500);
+  interativos.find(i => i.nome === 'Falar com Pai').acao = () => aviso('Pai: "' + ['Distrital de Pokémon? Na minha época era de... também era Pokémon, na verdade.', 'Cuidado com a linha da pipa... ah não, hoje é Pokémon. Vai lá pegar as insígnias.', 'Se o Dudu fizer 42 de novo eu vou embora na Trailblazer.'][Math.floor(Math.random() * 3)] + '"', 4500);
   interativos.find(i => i.nome === 'Falar com Lobinho Alisson').acao = () => aviso('Lobinho Alisson: "' + (CAP4.insignias.fantasma ? 'O Fantasma se escondeu bem, né? Eu sabia que ele era especial.' : 'Eu sou o treinador do Fantasma. Ele é tipo Fantasma. Óbvio.') + '"', 4000);
   // a Trailblazer sai da frente pro ônibus estacionar
-  carro.position.x += 6;
+  carro.position.x += 6; carroObst.x = carro.position.x;
   CAP4.onibus = CAP4.onibus || criaOnibus();
   // líderes de ginásio (lobinhos/escoteiros das alcateias visitantes) — aparecem quando o ônibus chega
   for (const g of GINASIOS) {

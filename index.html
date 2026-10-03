@@ -2,7 +2,8 @@
 <html lang="pt-BR">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-capable" content="yes"><meta name="theme-color" content="#183520">
 <title>Escoteiros — Camping Municipal de São Lourenço do Sul</title>
   <link rel="preconnect" href="https://fonts.googleapis.com"><link href="https://fonts.googleapis.com/css2?family=Comic+Neue:wght@700&display=swap" rel="stylesheet">
 <style>
@@ -193,8 +194,29 @@
   #painelOnline .codigo{font:bold 46px/1.1 monospace;letter-spacing:6px;color:#ffd54a;text-align:center;margin:8px 0;padding:8px;border:3px dashed #ffd54a;border-radius:14px}
   #painelOnline .msg{color:#ffb3a8}
   #hudOnline{display:none;position:absolute;left:50%;top:14px;transform:translateX(-50%);background:rgba(0,0,0,.5);padding:4px 12px;border-radius:10px;font-size:13px;border:1px solid #7ee0ff}
-  #frasesOnline{display:none;position:absolute;left:14px;top:50%;transform:translateY(-50%);background:#fbf5e3;color:#2a2a2a;text-shadow:none;border:3px solid #2f63c4;border-radius:12px;padding:10px 14px;font-size:15px;line-height:1.7}
+  #frasesOnline{display:none;position:fixed;z-index:9;pointer-events:auto;color:#2a2a2a;left:14px;top:50%;transform:translateY(-50%);background:#fbf5e3;color:#2a2a2a;text-shadow:none;border:3px solid #2f63c4;border-radius:12px;padding:10px 14px;font-size:15px;line-height:1.7}
   #frasesOnline kbd{display:inline-block;min-width:16px;padding:0 6px;border:1px solid #888;border-bottom-width:3px;border-radius:5px;background:#fff;font:bold 13px system-ui;text-align:center}
+  /* celular: nada de zoom com dois dedos / toque duplo, nem "puxar pra atualizar" no meio do jogo */
+  html,body{touch-action:manipulation;overscroll-behavior:none;-webkit-tap-highlight-color:transparent}
+  canvas{touch-action:none}
+  body.toque #inicio h1{font-size:34px;letter-spacing:2px}
+  body.toque #inicio .linhaBtns .btn2,body.toque #inicio .cap,body.toque #inicio .mg{padding:9px 14px}
+  body.toque #frasesOnline{left:auto;right:240px;top:auto;bottom:14px;transform:none;font-size:16px}
+  #frasesOnline .fr{cursor:pointer;padding:2px 6px;border-radius:6px}#frasesOnline .fr:active{background:#ffd54a}
+  /* celular deitado (tela baixa): menu compacto pra o "começar" aparecer sem rolar muito */
+  @media (max-height:500px){
+    #inicio{padding-top:6px}
+    #inicio h1{font-size:26px !important;margin-top:18px !important;padding:4px 22px 3px !important}
+    #inicio h1::before{top:-18px;height:18px}#inicio h1::after{bottom:-18px;height:18px;width:40px;margin-left:-20px}
+    #inicio h2{margin:22px 0 4px !important;font-size:12px !important}
+    #inicio > p:first-of-type{display:none}
+    #inicio .escolha{gap:10px;margin-top:4px}
+    #inicio .escolha .perso{flex:0 0 190px !important;padding:4px 8px !important}
+    #inicio .perso small{display:none}#inicio .perso b{margin-top:2px;font-size:15px}
+    #inicio .av{width:34px !important;height:34px !important}
+    #inicio .caps{margin:6px 0 0}#inicio .btn{margin-top:8px;padding:8px 22px;font-size:16px}
+    #inicio .linhaBtns{margin-top:8px;gap:6px}#inicio .mgs{margin-top:8px}
+  }
 </style>
 </head>
 <body>
@@ -227,6 +249,7 @@
 <div id="flash"></div>
 <div id="fotoGrande"></div>
 <div id="toque"></div>
+<div id="frasesOnline"></div>
 <div id="btnCap2">▶ Capítulo 2 — uma semana depois</div>
 <div id="pausa"><div>⏸ Pausado — clique para continuar</div></div>
 <div id="textoNoite"></div>
@@ -239,7 +262,6 @@
   <div id="balao"></div>
   <div id="tutorial"></div>
   <div id="hudOnline"></div>
-  <div id="frasesOnline"></div>
   <div id="escolhaPad"></div>
 <div id="destinos"></div>
 <div id="minijogo"></div>
@@ -261,14 +283,14 @@
 <script src="dados/cap3_missoes.js?v=1"></script>
 <script src="dados/cap4_missoes.js?v=1"></script>
 <script src="dados/distintivos.js?v=1"></script>
-<script src="game.js?v=11"></script>
+<script src="game.js?v=13"></script>
 <script src="cap2.js?v=3"></script>
 <script src="cap3.js?v=3"></script>
 <script src="cap4.js?v=3"></script>
 <script src="mods.js?v=3"></script>
 <script src="extras.js?v=3"></script>
-<script src="toque.js?v=1"></script>
+<script src="toque.js?v=3"></script>
 <script src="grama.js?v=6"></script>
-<script src="online.js?v=1"></script>
+<script src="online.js?v=2"></script>
 </body>
 </html>

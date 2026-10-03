@@ -8,6 +8,15 @@
   if (!TOQUE.ativo) return;
   document.body.classList.add('toque');
   inicio.querySelector('.btn:not(#btnContinuar)').textContent = 'Toque para começar';
+  pausaEl.querySelector('div').textContent = '⏸ Pausado — toque para continuar';
+  // tela cheia e deitada ao começar (some a barra do navegador). Só funciona com um toque de verdade, por isso fica nos botões;
+  // o iPhone não deixa tela cheia fora de vídeo: lá o jogo segue normal
+  function telaCheia() {
+    const d = document.documentElement, pede = d.requestFullscreen || d.webkitRequestFullscreen;
+    if (!pede || document.fullscreenElement || document.webkitFullscreenElement) return;
+    try { const p = pede.call(d, { navigationUI: 'hide' }); if (p && p.then) p.then(() => { try { screen.orientation.lock('landscape').catch(() => {}); } catch (e) {} }).catch(() => {}); } catch (e) {}
+  }
+  for (const el of [inicio.querySelector('.btn:not(#btnContinuar)'), document.getElementById('btnContinuar'), pausaEl]) el.addEventListener('click', telaCheia);
 
   const raiz = document.getElementById('toque');
   raiz.innerHTML = `
@@ -22,9 +31,16 @@
       <b data-k="KeyM">🗺️</b>
       <b data-acao="foto">📷</b>
       <b data-acao="cara">😊</b>
+      <b data-acao="frases" class="frases">💬</b>
     </div>
     <b class="pausa" data-acao="pausa">⏸</b>
     <div class="gire">📱↻ Vire o celular de lado pra jogar melhor</div>`;
+
+  // depois do toque o navegador ainda manda um "clique fantasma" no mesmo ponto: no ⏸ ele caía no "Pausado" (que acabou de
+  // aparecer ali) e despausava na hora. Cancelar o touchend nos controles some com esse clique.
+  raiz.addEventListener('touchend', e => { if (e.cancelable) e.preventDefault(); }, { passive: false });
+  let pausouEm = 0;
+  pausaEl.addEventListener('click', e => { if (performance.now() - pausouEm < 600) e.stopImmediatePropagation(); }, true);
 
   // tecla de mentira: o jogo recebe igualzinho a uma tecla de verdade
   function tecla(code, desce) { document.dispatchEvent(new KeyboardEvent(desce ? 'keydown' : 'keyup', { code, key: code, bubbles: true, cancelable: true })); }
@@ -39,7 +55,8 @@
       if (a === 'correr') { TOQUE.correr = !TOQUE.correr; b.classList.toggle('ligado', TOQUE.correr); }
       if (a === 'foto' && typeof tiraFoto === 'function') tiraFoto();
       if (a === 'cara') { tecla('Digit' + (cara % 4 + 1), true); tecla('Digit' + (cara % 4 + 1), false); cara++; }
-      if (a === 'pausa') { soltaTudo(); TOQUE.mx = TOQUE.mz = 0; mudouTrava(false); }
+      if (a === 'frases' && typeof mostraFrases === 'function') mostraFrases(frasesEl.style.display !== 'block');
+      if (a === 'pausa') { pausouEm = performance.now(); soltaTudo(); TOQUE.mx = TOQUE.mz = 0; mudouTrava(false); }
     });
     const solta = e => { if (!b.classList.contains('apertado')) return; b.classList.remove('apertado'); if (b.dataset.k) tecla(b.dataset.k, false); };
     b.addEventListener('pointerup', solta); b.addEventListener('pointercancel', solta); b.addEventListener('pointerleave', solta);
@@ -82,6 +99,7 @@
     const comSetas = !!(mini || cena);
     setas.style.display = comSetas ? 'block' : 'none'; zEsq.style.display = comSetas ? 'none' : 'block';
     if (comSetas && dedoJoy !== null) { dedoJoy = null; TOQUE.mx = TOQUE.mz = 0; base.style.display = 'none'; }
+    raiz.querySelector('.frases').style.display = typeof naSala === 'function' && naSala() ? '' : 'none';   // 💬 só numa sala online
     const it = !cena && !mini && interativoProximo();
     rotE.textContent = it ? it.nome : '';
   }

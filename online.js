@@ -143,14 +143,19 @@ function onlineMinimapa() { for (const r of ONLINE.remotos.values()) { const [a,
 
 // ---- frases prontas: T abre a lista, 1-7 manda ----
 const frasesEl = document.getElementById('frasesOnline');
-function mostraFrases(on) { frasesEl.style.display = on ? 'block' : 'none'; if (on) frasesEl.innerHTML = '<b>💬 Frases</b> (aperte o número)<br>' + FRASES.map((f, i) => '<kbd>' + (i + 1) + '</kbd> ' + f).join('<br>') + '<br><small>T ou Esc fecha</small>'; }
+function mandaFrase(i) { manda({ t: 'frase', i }); aviso(PERSONAGENS[personagemId].nome + ': "' + FRASES[i] + '"', 3000); mostraFrases(false); }
+function mostraFrases(on) {
+  frasesEl.style.display = on ? 'block' : 'none'; if (!on) return;
+  frasesEl.innerHTML = '<b>💬 Frases</b> ' + (TOQUE.ativo ? '(toque numa)' : '(aperte o número)') + '<br>' + FRASES.map((f, i) => '<div class="fr" data-i="' + i + '"><kbd>' + (i + 1) + '</kbd> ' + f + '</div>').join('') + '<small>' + (TOQUE.ativo ? '💬 fecha' : 'T ou Esc fecha') + '</small>';
+  frasesEl.querySelectorAll('.fr').forEach(el => el.addEventListener('pointerdown', e => { e.preventDefault(); e.stopPropagation(); mandaFrase(+el.dataset.i); }));
+}
 addEventListener('keydown', e => {
   if (!naSala() || inicio.style.display !== 'none' || mini) return;
   const aberto = frasesEl.style.display === 'block';
   if (e.code === 'KeyT' && !e.repeat) { mostraFrases(!aberto); e.stopImmediatePropagation(); return; }
   if (!aberto) return;
   const n = /^Digit([1-7])$/.exec(e.code);
-  if (n) { const i = +n[1] - 1; manda({ t: 'frase', i }); aviso(PERSONAGENS[personagemId].nome + ': "' + FRASES[i] + '"', 3000); mostraFrases(false); }
+  if (n) mandaFrase(+n[1] - 1);
   if (e.code === 'Escape') mostraFrases(false);
   e.stopImmediatePropagation();   // com a lista aberta, 1-4 não fazem careta
 }, true);
@@ -165,7 +170,7 @@ function statusOnline(msg) {
       '<p>👥 ' + n + ' na sala: <b>' + PERSONAGENS[personagemId].nome + ' (você)</b>' + [...ONLINE.remotos.values()].map(r => ' · <span style="color:' + r.cor + '">' + r.oi.nome + '</span>').join('') + '</p>' +
       '<button id="olSai" class="sec">Sair da sala</button> <small>Feche este painel e clique em começar: os amigos aparecem no camping.</small>';
   } else {
-    h += '<p>Jogue no mesmo camping com amigos em outros computadores. Cada um faz as suas tarefas; vocês se veem andando, pulando, fazendo caretas e mandando frases (tecla <b>T</b>).</p>' +
+    h += '<p>Jogue no mesmo camping com amigos em outros computadores ou celulares. Cada um faz as suas tarefas; vocês se veem andando, pulando, fazendo caretas e mandando frases (tecla <b>T</b> ou o botão 💬 no celular).</p>' +
       '<p><button id="olCria">🏕️ Criar uma sala</button> &nbsp; ou &nbsp; <input id="olCodigo" placeholder="LOBO-7K2" maxlength="8" size="9"> <button id="olEntra">Entrar</button></p>' +
       '<small>Só entra quem tiver o código. Não tem bate-papo: só frases prontas e caretas. Até ' + ONLINE.max + ' jogadores. Precisa de internet.</small>';
   }

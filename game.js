@@ -35,11 +35,14 @@ function shapeDe(poly) {
 }
 
 // ---------- cena ----------
-const renderer = new THREE.WebGLRenderer({ antialias: true });
-renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+// celular/tablet (tela de toque): ?toque força, ?semtoque desliga. Celular tem pouca força: menos pixels, sem suavizar borda,
+// sombra mais simples e grama menor (grama.js) — senão o jogo fica a poucos quadros por segundo
+const EH_CELULAR = /[?&]toque\b/.test(location.search) || (typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches && !/[?&]semtoque\b/.test(location.search));
+const renderer = new THREE.WebGLRenderer({ antialias: !EH_CELULAR, powerPreference: 'high-performance' });
+renderer.setPixelRatio(EH_CELULAR ? Math.min(devicePixelRatio, 1.25) : Math.min(devicePixelRatio, 2));
 renderer.setSize(innerWidth, innerHeight);
 renderer.shadowMap.enabled = true;
-renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.shadowMap.type = EH_CELULAR ? THREE.PCFShadowMap : THREE.PCFSoftShadowMap;
 renderer.outputEncoding = THREE.sRGBEncoding;
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
 renderer.toneMappingExposure = 0.95;
@@ -56,7 +59,7 @@ scene.add(hemi);
 const sol = new THREE.DirectionalLight(0xfff2d8, 0.95);
 sol.position.set(-80, 140, 60);
 sol.castShadow = true;
-sol.shadow.mapSize.set(2048, 2048);
+sol.shadow.mapSize.set(EH_CELULAR ? 1024 : 2048, EH_CELULAR ? 1024 : 2048);
 sol.shadow.camera.near = 10; sol.shadow.camera.far = 400;
 sol.shadow.camera.left = -90; sol.shadow.camera.right = 90;
 sol.shadow.camera.top = 90; sol.shadow.camera.bottom = -90;
@@ -3118,7 +3121,7 @@ const pausado = () => pausaEl.style.display === 'flex';
 // o navegador recusa o pointer lock por ~1 s depois do Esc; aí o clique no "Pausado" caía no vazio
 let destravouEm = -1e9;
 // celular/tablet (toque.js): não existe trava de mouse; "travar" só entra no jogo e o botão ⏸ pausa
-const TOQUE = { ativo: /[?&]toque\b/.test(location.search) || (typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches && !/[?&]semtoque\b/.test(location.search)), mx: 0, mz: 0, correr: false };
+const TOQUE = { ativo: EH_CELULAR, mx: 0, mz: 0, correr: false };
 let viaControle = false;   // o clique veio do botão A do controle: não dá pra prender o mouse (o navegador só deixa com clique de verdade)
 function comecaPeloControle(el) { viaControle = true; try { (el || inicio.querySelector('.btn:not(#btnContinuar)')).click(); } finally { viaControle = false; } }
 function travar() {

@@ -45,7 +45,7 @@ Cada controle novo aperta Start pra entrar. Um controle genérico que o jogo nã
 faz cada coisa (pular, interagir, habilidade, mapa, correr, start, sair) e guarda isso no navegador; o ❓ Controles do menu tem
 "Configurar os controles de novo".
 
-No **celular/tablet** aparecem joystick e botões na tela (✋ = E, ⤒ pular, 🏃 correr, ⭐ habilidade, 🗺️ mapa, 📷 foto, ⏸ pausa);
+📱 **Celular/tablet:** é só abrir o link no navegador do celular (deitado). Ao começar, o jogo vai pra tela cheia; ele desenha com menos pixels, sombra mais simples e menos grama pra rodar liso. Aparecem joystick e botões na tela (✋ = E, ⤒ pular, 🏃 correr, ⭐ habilidade, 🗺️ mapa, 📷 foto, 😊 caretas, 💬 frases numa sala online, ⏸ pausa);
 a câmera gira arrastando o dedo do lado direito e dois dedos dão zoom. Pra ver no computador: `index.html?toque`.
 
 ## Capítulos

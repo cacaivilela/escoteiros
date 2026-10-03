@@ -10,13 +10,25 @@
 //   • marcador no mapa só para missões ativas (Missoes.marcadores).
 //
 // Este arquivo é PURO: não usa DOM nem THREE, por isso roda nos testes (gjs) sem navegador.
-// game.js liga os ouvintes (Missoes.ao) pra atualizar HUD, som e avisos.
-// As definições ficam em dados/cap1_missoes.js (veja o formato lá).
+// game.js liga os ouvintes (Missoes.ao) pra atualizar HUD, som e avisos. Eventos:
+//   'ativa' (id)  'concluida' (id)  'muda' (id: texto/progresso/marcador mudou)  'erro' (mensagem)
+//   'recarrega' (sem id): a lista inteira mudou de uma vez (carrega ou importa) — o HUD redesenha tudo a partir de lista().
+// As definições ficam em dados/capN_missoes.js, uma por capítulo (veja o formato em dados/cap1_missoes.js).
+// Cada capítulo começa com Missoes.carrega(DADOS.capNMissoes); o código do capítulo usa da/conclui/texto/marca.
+//
+// Salvar o progresso:
+//   Missoes.exporta() → { versao: 1, ids: [...], estado: {id: 'ativa'|...}, prog: {id: n}, txts: {id: texto mudado},
+//                         metas: {id: n}, marcas: {id: [x, y]} }   (JSON simples, pode ir pro localStorage)
+//   Missoes.importa(snap) → restaura isso por cima do capítulo JÁ CARREGADO (chame carrega antes, com as mesmas definições).
+//     Não dispara 'ativa'/'concluida' (sem aviso nem som); dispara só 'recarrega'. Devolve a lista de problemas
+//     (missão que não existe mais, estado inválido) — vazia se deu tudo certo.
+//   Missoes.avancaAte(id) → "retomar": dá e conclui, na ordem do arquivo, tudo antes de id (que fica ativa). Esse dispara
+//     'ativa'/'concluida' normalmente; quem não quer aviso embrulha (game.js: missoesSemAviso).
 
 var Missoes = (function () {
   const ESTADOS = ['escondida', 'disponivel', 'ativa', 'concluida'];
   let defs = {}, ordem = [], estado = {}, prog = {}, txts = {}, marcas = {};
-  const ouvintes = { ativa: [], concluida: [], muda: [], erro: [] };
+  const ouvintes = { ativa: [], concluida: [], muda: [], erro: [], recarrega: [] };
   // quem testa "estou dentro do lugar X?" (o jogo liga com os polígonos do mapa; os testes com uma função fake)
   let dentro = () => false;
 
@@ -33,6 +45,7 @@ var Missoes = (function () {
     }
     const probs = valida(lista);
     for (const p of probs) erro(p);
+    avisa('recarrega');
     return probs;
   }
 
@@ -137,8 +150,52 @@ var Missoes = (function () {
   const todas = () => ordem.slice();
   const def = id => defs[id];
   function ao(tipo, f) { if (!ouvintes[tipo]) throw new Error('evento desconhecido: ' + tipo); ouvintes[tipo].push(f); }
+  // ---- salvar e restaurar (veja o cabeçalho) ----
+  function exporta() {
+    const snap = { versao: 1, ids: ordem.slice(), estado: {}, prog: {}, txts: {}, metas: {}, marcas: {} };
+    for (const id of ordem) {
+      snap.estado[id] = estado[id];
+      if (prog[id]) snap.prog[id] = prog[id];
+      if (txts[id] !== defs[id].txt) snap.txts[id] = txts[id];
+      if (metas[id] !== undefined) snap.metas[id] = metas[id];
+      if (marcas[id]) snap.marcas[id] = marcas[id].slice();
+    }
+    return snap;
+  }
+  function importa(snap) {
+    if (!snap || typeof snap !== 'object' || !snap.estado || typeof snap.estado !== 'object') { erro('importa: snapshot inválido'); return ['snapshot inválido']; }
+    const probs = [];
+    // volta tudo pro começo do capítulo e aplica o snapshot por cima (missão nova que o save não conhece fica como no início)
+    estado = {}; prog = {}; txts = {}; marcas = {}; for (const k in metas) delete metas[k];
+    for (const id of ordem) { const d = defs[id]; estado[id] = d.inicio ? 'disponivel' : 'escondida'; prog[id] = 0; txts[id] = d.txt; if (d.marcador && !snap.marcas) marcas[id] = d.marcador.slice(); }
+    for (const id in snap.estado) {
+      if (!defs[id]) { probs.push('importa: missão "' + id + '" não existe neste capítulo'); continue; }
+      if (!ESTADOS.includes(snap.estado[id])) { probs.push('importa: estado inválido pra ' + id + ': ' + snap.estado[id]); continue; }
+      estado[id] = snap.estado[id];
+    }
+    for (const id in snap.prog || {}) if (defs[id]) prog[id] = +snap.prog[id] || 0;
+    for (const id in snap.txts || {}) if (defs[id]) txts[id] = String(snap.txts[id]);
+    for (const id in snap.metas || {}) if (defs[id]) metas[id] = +snap.metas[id];
+    for (const id in snap.marcas || {}) if (defs[id] && Array.isArray(snap.marcas[id])) marcas[id] = snap.marcas[id].slice();
+    for (const p of probs) erro(p);
+    avisa('recarrega');
+    return probs;
+  }
+  // retomar de um ponto: dá e conclui (na ordem do arquivo) tudo antes de "ate", que fica ativa. Opcionais só com comOpcionais.
+  // Missão de item conta como coletada até a meta. Devolve as que concluiu.
+  function avancaAte(ate, comOpcionais) {
+    if (ate && !defs[ate]) { erro('avancaAte(' + ate + '): missão não existe'); return []; }
+    const feitas = [];
+    for (const id of ordem) {
+      if (id === ate) { da(id); break; }
+      if ((defs[id].opcional && !comOpcionais) || estado[id] === 'concluida') continue;
+      da(id); if (defs[id].gatilho.tipo === 'item') prog[id] = Math.max(prog[id], meta(id));
+      if (conclui(id)) feitas.push(id);
+    }
+    return feitas;
+  }
   function reseta() { defs = {}; ordem = []; estado = {}; prog = {}; txts = {}; marcas = {}; for (const k in metas) delete metas[k]; }
 
   return { ESTADOS, carrega, valida, existe, estado: estadoDe, ativa, concluida, disponivel, da, conclui, falou, chegou, podeColetar, coletou, minigame,
-    progresso, meta, texto, marca, marcadores, lista, ativas, todas, def, ao, reseta, set dentro(f) { dentro = f; }, get dentro() { return dentro; } };
+    progresso, meta, texto, marca, marcadores, lista, ativas, todas, def, ao, reseta, exporta, importa, avancaAte, set dentro(f) { dentro = f; }, get dentro() { return dentro; } };
 })();

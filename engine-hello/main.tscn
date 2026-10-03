@@ -1,0 +1,73 @@
+[gd_scene load_steps=8 format=3 uid="uid://bhello3escoteiros"]
+
+[ext_resource type="Script" path="res://player.gd" id="1_player"]
+
+[sub_resource type="BoxMesh" id="BoxMesh_chao"]
+size = Vector3(40, 1, 40)
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_chao"]
+size = Vector3(40, 1, 40)
+
+[sub_resource type="BoxMesh" id="BoxMesh_muro"]
+size = Vector3(6, 3, 1)
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_muro"]
+size = Vector3(6, 3, 1)
+
+[sub_resource type="CapsuleMesh" id="CapsuleMesh_boneco"]
+
+[sub_resource type="CapsuleShape3D" id="CapsuleShape3D_boneco"]
+
+[node name="Main" type="Node3D"]
+
+[node name="Chao" type="StaticBody3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.5, 0)
+
+[node name="Mesh" type="MeshInstance3D" parent="Chao"]
+mesh = SubResource("BoxMesh_chao")
+
+[node name="Forma" type="CollisionShape3D" parent="Chao"]
+shape = SubResource("BoxShape3D_chao")
+
+[node name="Muro" type="StaticBody3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.5, -6)
+
+[node name="Mesh" type="MeshInstance3D" parent="Muro"]
+mesh = SubResource("BoxMesh_muro")
+
+[node name="Forma" type="CollisionShape3D" parent="Muro"]
+shape = SubResource("BoxShape3D_muro")
+
+[node name="Arvore" type="StaticBody3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 5, 1.5, 3)
+
+[node name="Mesh" type="MeshInstance3D" parent="Arvore"]
+transform = Transform3D(0.3, 0, 0, 0, 1, 0, 0, 0, 0.3, 0, 0, 0)
+mesh = SubResource("BoxMesh_muro")
+
+[node name="Forma" type="CollisionShape3D" parent="Arvore"]
+transform = Transform3D(0.3, 0, 0, 0, 1, 0, 0, 0, 0.3, 0, 0, 0)
+shape = SubResource("BoxShape3D_muro")
+
+[node name="Luz" type="DirectionalLight3D" parent="."]
+transform = Transform3D(0.707107, -0.5, 0.5, 0, 0.707107, 0.707107, -0.707107, -0.5, 0.5, 0, 10, 0)
+shadow_enabled = true
+
+[node name="Boneco" type="CharacterBody3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1, 0)
+script = ExtResource("1_player")
+
+[node name="Mesh" type="MeshInstance3D" parent="Boneco"]
+mesh = SubResource("CapsuleMesh_boneco")
+
+[node name="Forma" type="CollisionShape3D" parent="Boneco"]
+shape = SubResource("CapsuleShape3D_boneco")
+
+[node name="Pivo" type="Node3D" parent="Boneco"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1, 0)
+
+[node name="Braco" type="SpringArm3D" parent="Boneco/Pivo"]
+transform = Transform3D(1, 0, 0, 0, 0.939693, 0.34202, 0, -0.34202, 0.939693, 0, 0, 0)
+spring_length = 6.0
+
+[node name="Camera" type="Camera3D" parent="Boneco/Pivo/Braco"]

@@ -18,7 +18,8 @@ function grupo(nome, fn) { print('• ' + nome); try { fn(); } catch (e) { falha
 // ---- 1. todo arquivo do jogo pelo menos compila (um erro de vírgula quebra o jogo inteiro) ----
 grupo('sintaxe de todos os arquivos', () => {
   for (const arq of ['som.js', 'mapa.js', 'game.js', 'cap2.js', 'cap3.js', 'cap4.js', 'mods.js', 'motor/missoes.js', 'motor/dialogos.js',
-    'dados/personagens.js', 'dados/itens.js', 'dados/cap1_lugares.js', 'dados/cap1_missoes.js', 'dados/cap1_dialogos.js']) {
+    'dados/personagens.js', 'dados/itens.js', 'dados/cap1_lugares.js', 'dados/cap1_missoes.js', 'dados/cap1_dialogos.js',
+    'dados/cap2_missoes.js', 'dados/cap3_missoes.js', 'dados/cap4_missoes.js']) {
     try { new Function(le(arq)); ok(true); } catch (e) { ok(false, arq + ': ' + e.message + ' (linha ' + e.lineNumber + ')'); }
   }
 });

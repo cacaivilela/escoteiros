@@ -11,24 +11,8 @@ const C3 = {
   iate: [300, 150],                                  // sede do Iate Clube
   ETAPAS: [['serrar', 2, 'Cortar as varetas no tamanho certo'], ['amarrar', 2, 'Amarrar a armação (cruz e arco)'], ['amarrar', 1, 'Colar o papel e amarrar a rabiola']],
 };
-const C3_MISSOES = [
-  ['c3_akela', 'Sábado de pipa! Falar com a Akelá na árvore do lobinhos.com'],
-  ['c3_pai', 'Falar com o Pai na portaria — ele ensina a fazer pipa'],
-  ['c3_bambu', 'Cortar 3 varetas de bambu na mata, atrás da cancha de bocha (0/3)'],
-  ['c3_papel', 'Pegar papel de seda na cantina'],
-  ['c3_linha', 'Pegar o carretel de linha na caixa de pioneiria, na frente da sede'],
-  ['c3_montar', 'Montar a pipa com o Pai na portaria (0/3 etapas)'],
-  ['c3_empinar', 'Empinar a pipa na Praia do Camping (chegar a 40 m)'],
-  ['c3_concurso', 'Concurso de altura: passar as pipas do Dudu, da Maria e do Joaquim (80 m)'],
-  ['c3_casinha', 'Soltar a pipa que enroscou na casinha do salva-vidas'],
-  ['c3_joaquim', 'Pegar a pipa do Joaquim na árvore do lobinhos.com (subir pelo A de bambu)'],
-  ['c3_grito', 'Um grito estranho vindo do Iate Clube! Falar com o Chefe Diego'],
-  ['c3_iate', 'À noite: ir até o Iate Clube pela estrada da portaria, com a lanterna'],
-  ['c3_velejador', 'Descobrir o que era o grito: falar com o Velejador'],
-  ['c3_fogueira', 'Voltar pra Fogueira do Conselho, ao lado da sede do Grupo Escoteiro (🔥 no mapa), e contar pra alcateia'],
-];
-function c3Missao(id) { const m = C3_MISSOES.find(x => x[0] === id); if (m && !missoes.find(x => x.id === id)) { missoes.push({ id, txt: m[1], ok: false }); renderMissoes(); } }
-function c3Txt(id, txt) { const m = missoes.find(x => x.id === id); if (m) { m.txt = txt; renderMissoes(); } }
+// missões: dados/cap3_missoes.js (texto e grafo); aqui só Missoes.da / conclui / coletou / texto no ponto certo da história
+const c3TxtMontar = () => 'Montar a pipa com o Pai na portaria (' + CAP3.etapa + '/3 etapas)';
 
 // ---------- objetos ----------
 const matPapel = new THREE.MeshLambertMaterial({ color: 0xe8402a, side: THREE.DoubleSide });
@@ -82,18 +66,16 @@ function iniciaCap3() {
   // emojis marcando onde pegar cada material (aparecem depois que o Pai explica)
   CAP3.marcas = { bambu: C3.bambus.map(([x, y]) => criaEmoji('🎋', x, y, 6.5)), carretel: criaEmoji('🧵', C3_CARRETEL[0], C3_CARRETEL[1], 3), papel: criaEmoji('📄', MAPA.lanchonete.x, MAPA.lanchonete.y, 5.5) };
   CAP3.pipasNpc = [['Lobinho Dudu', 0x2fa84f, 60], ['Lobinha Maria', 0xf2c94c, 72], ['Lobinho Joaquim', 0x2c5bb5, 35]].map(([n, cor, alt]) => ({ nome: n, npc: npcs.find(x => x.nome === n), pipa: criaPipa(cor), linha: criaLinha(), alt }));
-  missoes.splice(0, missoes.length); c3Missao('c3_akela');
+  Missoes.carrega(DADOS.cap3Missoes); missoesSemAviso(() => Missoes.da('c3_akela'));
   CAP3.fase = 'abre';
   cena = { cap2: true, cap3: true, tipo: 'abre', t: 0 };
   textoNoite.textContent = 'Mais um sábado no camping — dia de vento'; textoNoite.style.opacity = 1;
   if (CAP3.continuar === 'noite') retomaCap3Noite();
 }
 function retomaCap3Noite() {
-  missoes.splice(0, missoes.length);
-  for (const [id, txt] of C3_MISSOES.slice(0, 10)) missoes.push({ id, txt, ok: true });
-  c3Txt('c3_bambu', 'Cortar 3 varetas de bambu na mata (3/3)'); c3Txt('c3_montar', 'Montar a pipa com o Pai na portaria (3/3 etapas)');
   CAP3.bambus = 3; CAP3.etapa = 3; CAP3.temPapel = CAP3.temLinha = CAP3.temPipa = true;
-  CAP3.fase = 'grito'; c3Missao('c3_grito');
+  missoesSemAviso(() => { Missoes.avancaAte('c3_grito'); Missoes.texto('c3_montar', c3TxtMontar()); });
+  CAP3.fase = 'grito';
   textoNoite.textContent = 'Continuando: fim de tarde, depois das pipas';
   if (cena) cena.t = 1.5;
   setTimeout(() => { SOM.buzina(); aviso('😱 UUUUUÔÔÔÔ! Que grito foi esse?! Veio do lado do Iate Clube...', 4500); }, 3500);
@@ -106,7 +88,7 @@ function c3Akela() {
     // Lara e Caio são filhos do Henrique; pra Maria e Dudu ele é o Tio Henrique
     const paiDe = (personagemId === 'lara' || personagemId === 'caio') ? 'o seu pai' : 'o Tio Henrique';
     aviso('Akelá: "' + PERSONAGENS[personagemId].nome + ', hoje o vento da lagoa tá perfeito: DIA DE PIPA! Da última vez que fizemos pipa quem se responsabilizou foi ' + paiDe + ', lembra? Vai lá na portaria pedir pra ele ensinar."', 7000);
-    completa('c3_akela'); CAP3.fase = 'pai'; c3Missao('c3_pai');
+    Missoes.falou('Akelá'); CAP3.fase = 'pai'; Missoes.da('c3_pai');
   }
   else if (f === 'pai' || f === 'materiais' || f === 'montar') aviso('Akelá: "Faz a tua pipa com o Pai e depois vem pra praia. O Dudu, a Maria e o Joaquim já estão empinando as deles!"', 4500);
   else if (f === 'praia') aviso('Akelá: "Vai pra Praia do Camping, perto da casinha do salva-vidas. Lá o vento vem limpo da lagoa."', 4000);
@@ -123,12 +105,12 @@ function c3Pai() {
       'Pai: "Pipa? Eu fazia pipa todo dia quando era guri. Precisa de 3 varetas de bambu, papel de seda, linha e um rabo de pano."',
       'Pai: "Bambu tem na mata, atrás da cancha de bocha. Papel de seda a cantina tem. Linha, tem um carretel lá na sede."',
       'Pai: "Traz tudo aqui que a gente monta juntos. E cuidado com a linha, que corta o dedo."',
-    ], aoTerminar: () => { cena = null; completa('c3_pai'); CAP3.fase = 'materiais'; c3Missao('c3_bambu'); c3Missao('c3_papel'); c3Missao('c3_linha'); } };
+    ], aoTerminar: () => { cena = null; Missoes.falou('Pai'); CAP3.fase = 'materiais'; for (const id of ['c3_bambu', 'c3_papel', 'c3_linha']) Missoes.da(id); } };
     c2ProximaFala();
   } else if (f === 'materiais') {
     const falta = [CAP3.bambus < 3 ? 'as varetas de bambu' : null, !CAP3.temPapel ? 'o papel de seda' : null, !CAP3.temLinha ? 'a linha' : null].filter(Boolean);
     if (falta.length) aviso('Pai: "Ainda falta ' + falta.join(', ') + '. Vai buscar que eu espero aqui."', 4000);
-    else { aviso('Pai: "Trouxe tudo! Então vamos montar. Primeiro a gente corta as varetas no tamanho certo."', 4500); completa('c3_bambu'); completa('c3_papel'); completa('c3_linha'); CAP3.fase = 'montar'; c3Missao('c3_montar'); }
+    else { aviso('Pai: "Trouxe tudo! Então vamos montar. Primeiro a gente corta as varetas no tamanho certo."', 4500); CAP3.fase = 'montar'; Missoes.da('c3_montar'); }
   } else if (f === 'montar') { const e = C3.ETAPAS[CAP3.etapa]; estado.yaw = Math.atan2(pai.position.x - estado.pos.x, pai.position.z - estado.pos.z); abreMini(e[0], e); }
   else if (f === 'praia') aviso('Pai: "Vai empinar na praia. Solta linha quando o vento tá forte e dá um puxão quando ele fraqueja. E não deixa a pipa cair na água!"', 5000);
   else if (CAP3.noite) aviso('Pai: "Grito? Eu não ouvi nada, tava concentrado no código... Vai com o Chefe, mas leva a lanterna."', 4000);
@@ -138,7 +120,7 @@ function c3Diego() {
   const f = CAP3.fase;
   if (f === 'grito') {
     aviso('Chefe Diego: "Eu também ouvi! Veio do lado do Iate Clube. Vamos lá ver, pela estrada da portaria. Lanterna ligada e ninguém sai do grupo, tá?"', 6000);
-    completa('c3_grito'); CAP3.fase = 'iate'; c3Missao('c3_iate');
+    Missoes.falou('Chefe Diego'); CAP3.fase = 'iate'; Missoes.da('c3_iate');
     setTimeout(iniciaNoiteCap3, 1500);
   } else if (f === 'iate') aviso('Chefe Diego: "Segue a estrada da portaria até o Iate Clube. Eu vou logo atrás com os outros."', 4000);
   else if (f === 'velejador') aviso('Chefe Diego: "Fala com o Velejador, ele tá ali na frente do clube."', 3500);
@@ -148,8 +130,8 @@ function c3Diego() {
 function cap3Etapa() {   // fim de um minigame de montar a pipa
   if (!CAP3 || !CAP3.ativo || CAP3.fase !== 'montar') return false;
   CAP3.etapa++; SOM.coleta();
-  c3Txt('c3_montar', 'Montar a pipa com o Pai na portaria (' + CAP3.etapa + '/3 etapas)');
-  if (CAP3.etapa >= 3) { completa('c3_montar'); CAP3.fase = 'praia'; CAP3.temPipa = true; c3Missao('c3_empinar'); aviso('Pai: "Ficou linda! Agora vai lá na Praia do Camping empinar. Eu vou ver de longe."', 5000); }
+  Missoes.texto('c3_montar', c3TxtMontar());
+  if (CAP3.etapa >= 3) { Missoes.conclui('c3_montar'); CAP3.fase = 'praia'; CAP3.temPipa = true; Missoes.da('c3_empinar'); aviso('Pai: "Ficou linda! Agora vai lá na Praia do Camping empinar. Eu vou ver de longe."', 5000); }
   else aviso('Pai: "' + ['Boa! Agora amarra a cruz e o arco bem firme, senão a pipa entorta no vento.', 'Agora o papel: cola nas varetas e amarra a rabiola de pano, que é ela que dá equilíbrio.'][CAP3.etapa - 1] + '" (aperte E de novo)', 5000);
   return true;
 }
@@ -167,10 +149,10 @@ function cap3PadExtra(j, inp) {
 
 // interações do capítulo
 interativos.push({ x: 0, z: 0, r: 0, nome: 'Cortar vareta de bambu', cond: () => CAP3.ativo && CAP3.fase === 'materiais' && CAP3.bambus < 3, acao: () => {
-  CAP3.bambus++; SOM.coleta(); c3Txt('c3_bambu', 'Cortar 3 varetas de bambu na mata, atrás da cancha de bocha (' + CAP3.bambus + '/3)');
+  CAP3.bambus++; SOM.coleta(); Missoes.coletou('bambu', 1);
   aviso(CAP3.bambus < 3 ? '🎋 Vareta de bambu cortada! (' + CAP3.bambus + '/3)' : '🎋 3 varetas! Agora o papel e a linha, e leva tudo pro Pai.', 3000);
 } });
-interativos.push({ x: MAPA.lanchonete.x, z: -MAPA.lanchonete.y, r: 9, nome: 'Pegar papel de seda na cantina', cond: () => CAP3.ativo && CAP3.fase === 'materiais' && !CAP3.temPapel, acao: () => { CAP3.temPapel = true; SOM.coleta(); aviso('📄 Papel de seda vermelho! A moça da cantina deu de presente.', 3000); c3Txt('c3_papel', 'Pegar papel de seda na cantina ✓'); } });
+interativos.push({ x: MAPA.lanchonete.x, z: -MAPA.lanchonete.y, r: 9, nome: 'Pegar papel de seda na cantina', cond: () => CAP3.ativo && CAP3.fase === 'materiais' && !CAP3.temPapel, acao: () => { CAP3.temPapel = true; SOM.coleta(); aviso('📄 Papel de seda vermelho! A moça da cantina deu de presente.', 3000); Missoes.coletou('papel', 1); } });
 const C3_CARRETEL = [-201, -131];   // caixa de pioneiria na frente da sede
 function criaCarretel() {
   const g = new THREE.Group(); const [x, y] = C3_CARRETEL; g.position.set(x, altO(x, y), -y);
@@ -179,11 +161,11 @@ function criaCarretel() {
   for (const sx of [-1, 1]) { const b = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.2, 0.03, 16), M.madeira); b.rotation.z = Math.PI / 2; b.position.set(sx * 0.16, 0.66, 0); g.add(b); }
   scene.add(g); return g;
 }
-interativos.push({ x: C3_CARRETEL[0], z: -C3_CARRETEL[1], r: 6, nome: 'Pegar o carretel de linha', cond: () => CAP3.ativo && CAP3.fase === 'materiais' && !CAP3.temLinha, acao: () => { CAP3.temLinha = true; SOM.coleta(); if (CAP3.carretel) CAP3.carretel.children[1].visible = CAP3.carretel.children[2].visible = CAP3.carretel.children[3].visible = false; aviso('🧵 Carretel de linha 10! Tava na caixa de pioneiria, na frente da sede.', 3000); c3Txt('c3_linha', 'Pegar o carretel de linha na sede ✓'); } });
+interativos.push({ x: C3_CARRETEL[0], z: -C3_CARRETEL[1], r: 6, nome: 'Pegar o carretel de linha', cond: () => CAP3.ativo && CAP3.fase === 'materiais' && !CAP3.temLinha, acao: () => { CAP3.temLinha = true; SOM.coleta(); if (CAP3.carretel) CAP3.carretel.children[1].visible = CAP3.carretel.children[2].visible = CAP3.carretel.children[3].visible = false; aviso('🧵 Carretel de linha 10! Tava na caixa de pioneiria, na frente da sede.', 3000); Missoes.coletou('linha', 1); } });
 interativos.push({ x: C3.praia[0], z: -C3.praia[1], r: 12, nome: 'Empinar a pipa', cond: () => CAP3.ativo && CAP3.fase === 'praia' && !mini, acao: iniciaPipa });
 interativos.push({ x: SALVA[0], z: -SALVA[1], r: 6, nome: 'Soltar a pipa da casinha', cond: () => CAP3.ativo && CAP3.fase === 'casinha', acao: () => {
-  CAP3.pipa.mesh.visible = false; CAP3.linha.visible = false; SOM.coleta(); completa('c3_casinha');
-  CAP3.fase = 'joaquim'; c3Missao('c3_joaquim');
+  CAP3.pipa.mesh.visible = false; CAP3.linha.visible = false; SOM.coleta(); Missoes.conclui('c3_casinha');
+  CAP3.fase = 'joaquim'; Missoes.da('c3_joaquim');
   const jq = CAP3.pipasNpc[2]; jq.pipa.mesh.position.set(ARV_BAND[0] + 1.2, ARV_TOPO + 1.6, -ARV_BAND[1] - 0.8); jq.pipa.mesh.rotation.set(0.6, 0.4, 0.3); jq.linha.visible = false;
   const n = jq.npc.mesh; n.position.set(ARV_BAND[0] + 4, altO(ARV_BAND[0] + 4, ARV_BAND[1] - 5), -(ARV_BAND[1] - 5)); n.rotation.y = -0.6; aplicaEmote(n, 'triste', 0);
   for (const o of obstaculos) if (o.npc === n) { o.x = n.position.x; o.z = n.position.z; }
@@ -191,16 +173,16 @@ interativos.push({ x: SALVA[0], z: -SALVA[1], r: 6, nome: 'Soltar a pipa da casi
   setTimeout(() => aviso('Lobinho Joaquim: "' + PERSONAGENS[personagemId].nome + '!!! Minha pipa enroscou na árvore do lobinhos.com e eu não alcanço! Sobe lá pra mim... por favor. Hmpf."', 5500), 3200);
 } });
 interativos.push({ x: ARV_BAND[0], z: -ARV_BAND[1], r: 4, nome: 'Pegar a pipa do Joaquim', cond: () => CAP3.ativo && CAP3.fase === 'joaquim' && naPlataforma(), acao: () => {
-  const jq = CAP3.pipasNpc[2]; jq.pipa.mesh.visible = false; SOM.coleta(); completa('c3_joaquim'); aplicaEmote(jq.npc.mesh, 'feliz', 0);
+  const jq = CAP3.pipasNpc[2]; jq.pipa.mesh.visible = false; SOM.coleta(); Missoes.conclui('c3_joaquim'); aplicaEmote(jq.npc.mesh, 'feliz', 0);
   aviso('Lobinho Joaquim: "PEGOU! Valeu... tu é legal. Mas não conta pra ninguém que eu pedi ajuda."', 4500);
   CAP3.fase = 'grito';
-  setTimeout(() => { SOM.buzina(); aviso('😱 UUUUUÔÔÔÔ! Que grito foi esse?! Veio do lado do Iate Clube...', 4500); c3Missao('c3_grito'); }, 7000);
+  setTimeout(() => { SOM.buzina(); aviso('😱 UUUUUÔÔÔÔ! Que grito foi esse?! Veio do lado do Iate Clube...', 4500); Missoes.da('c3_grito'); }, 7000);
 } });
 interativos.push({ x: -186, z: 136, r: 9, nome: 'Contar pra alcateia na fogueira', cond: () => CAP3.ativo && CAP3.fase === 'fogueira', acao: () => {
   cena = { cap2: true, cap3: true, tipo: 'falas', t: 0, i: -1, falas: [
     'Akelá: "Então o grito da noite era a buzina de nevoeiro do Velejador! Ninguém mais vai dormir com medo de fantasma de Iate Clube."',
     'Akelá: "E a pipa mais alta do sábado foi a do(a) ' + PERSONAGENS[personagemId].nome + '. O Pai ensinou bem! Grande Uivo, alcateia: AUUUUUU!"',
-  ], aoTerminar: () => { cena = null; if (CAP3.marcaFogueira) CAP3.marcaFogueira.visible = false; completa('c3_fogueira'); CAP3.fase = 'fim'; SOM.uivo(); setTimeout(() => { aviso('🏕️ FIM DO CAPÍTULO 3 — obrigado por jogar! A pipa do Pai, o concurso na praia, a casinha, a árvore e a buzina do Iate Clube. Até o próximo sábado! 🐺', 12000); SOM.fim(); mostraBotaoCap4(); }, 1500); } };
+  ], aoTerminar: () => { cena = null; if (CAP3.marcaFogueira) CAP3.marcaFogueira.visible = false; Missoes.conclui('c3_fogueira'); CAP3.fase = 'fim'; SOM.uivo(); setTimeout(() => { aviso('🏕️ FIM DO CAPÍTULO 3 — obrigado por jogar! A pipa do Pai, o concurso na praia, a casinha, a árvore e a buzina do Iate Clube. Até o próximo sábado! 🐺', 12000); SOM.fim(); mostraBotaoCap4(); }, 1500); } };
   c2ProximaFala();
 } });
 
@@ -238,13 +220,13 @@ function atualizaPipa(dt) {
     if (p.altura > 5) p.subiu = true;
     if (p.subiu && p.altura < 1.5) { p.subiu = false; p.linha = 8; p.altura = 0; p.impulso = 0; aviso('🪁 A pipa caiu na areia! Solta linha de novo com o vento.', 3000); SOM.aww(); }
     // metas
-    if (CAP3.fase === 'praia' && p.altura >= 40) { completa('c3_empinar'); CAP3.fase = 'concurso'; c3Missao('c3_concurso'); aviso('Akelá: "Olha a pipa do(a) ' + PERSONAGENS[personagemId].nome + '! Agora o concurso: quem passar dos 80 metros ganha!"', 5000); }
-    if (CAP3.fase === 'concurso') { p.venceuT = p.altura >= 80 ? p.venceuT + dt : 0; if (p.venceuT > 1.5) { p.fase = 'rajada'; p.rt = 0; completa('c3_concurso'); aviso('Akelá: "80 METROS! A pipa mais alta é do(a) ' + PERSONAGENS[personagemId].nome + '!" ...opa, olha essa rajada!', 5000); SOM.missao(); } }
+    if (CAP3.fase === 'praia' && p.altura >= 40) { Missoes.conclui('c3_empinar'); CAP3.fase = 'concurso'; Missoes.da('c3_concurso'); aviso('Akelá: "Olha a pipa do(a) ' + PERSONAGENS[personagemId].nome + '! Agora o concurso: quem passar dos 80 metros ganha!"', 5000); }
+    if (CAP3.fase === 'concurso') { p.venceuT = p.altura >= 80 ? p.venceuT + dt : 0; if (p.venceuT > 1.5) { p.fase = 'rajada'; p.rt = 0; Missoes.conclui('c3_concurso'); aviso('Akelá: "80 METROS! A pipa mais alta é do(a) ' + PERSONAGENS[personagemId].nome + '!" ...opa, olha essa rajada!', 5000); SOM.missao(); } }
     if (Math.floor(p.t * 6) !== Math.floor((p.t - dt) * 6)) desenhaPipaHud();
   } else if (p.fase === 'rajada') {
     // rajada leva a pipa até a casinha do salva-vidas e ela enrosca lá
     p.rt += dt; p.vento = 1; if (!p.de) p.de = p.mesh.position.clone();
-    if (p.rt > 3.2) { p.fase = 'enroscada'; p.mesh.position.set(SALVA[0] - 1.5, altO(SALVA[0], SALVA[1]) + 5.4, -SALVA[1] + 0.6); p.mesh.rotation.set(0.9, 0.3, 0.5); CAP3.linha.visible = false; cena = null; miniEl.style.display = 'none'; u.bracoE.rotation.x = u.bracoD.rotation.x = 0; CAP3.fase = 'casinha'; c3Missao('c3_casinha'); aviso('🪁 Enroscou na casinha do salva-vidas! Vai lá soltar.', 4000); SOM.grr(); return; }
+    if (p.rt > 3.2) { p.fase = 'enroscada'; p.mesh.position.set(SALVA[0] - 1.5, altO(SALVA[0], SALVA[1]) + 5.4, -SALVA[1] + 0.6); p.mesh.rotation.set(0.9, 0.3, 0.5); CAP3.linha.visible = false; cena = null; miniEl.style.display = 'none'; u.bracoE.rotation.x = u.bracoD.rotation.x = 0; CAP3.fase = 'casinha'; Missoes.da('c3_casinha'); aviso('🪁 Enroscou na casinha do salva-vidas! Vai lá soltar.', 4000); SOM.grr(); return; }
   }
   // posição da pipa: na frente do jogador, sobre a lagoa (na rajada, vai parar em cima da casinha do salva-vidas)
   const oscX = Math.sin(p.t * 1.7) * (1 + p.altura * 0.04), dist = p.altura * 0.75 + 3;
@@ -281,7 +263,7 @@ function iniciaNoiteCap3() {
   for (const q of CAP3.pipasNpc) { q.pipa.mesh.visible = false; q.linha.visible = false; const un = q.npc.mesh.userData; un.bracoE.rotation.x = un.bracoD.rotation.x = 0; }
 }
 function chegaIateCap3() {
-  CAP3.fase = 'velejador'; completa('c3_iate'); c3Missao('c3_velejador');
+  CAP3.fase = 'velejador'; Missoes.conclui('c3_iate'); Missoes.da('c3_velejador');
   // o Chefe, o Dudu e o Joaquim chegaram junto; o Velejador na frente do clube
   const pos = [[chefe, 302, 162, 0.6], [CAP3.pipasNpc[0].npc.mesh, 306, 160, 0.3], [CAP3.pipasNpc[2].npc.mesh, 309, 162, 0.2]];
   for (const [m, x, y, r] of pos) { m.position.set(x, altO(x, y), -y); m.rotation.y = r; m.visible = true; for (const o of obstaculos) if (o.npc === m) { o.x = x; o.z = -y; } for (const i of interativos) if (i.npcMesh === m) { i.x = x; i.z = -y; } }
@@ -299,7 +281,7 @@ function c3Velejador() {
     'Velejador: "Desculpa o susto, alcateia. Quer ouvir de perto? Tapa o ouvido..."',
     'Lobinho Joaquim: "EU NÃO TIVE MEDO. Só pulei um pouquinho. O Dudu que gritou."',
     'Lobinho Dudu: "Gritei nada! Era o Alisson lá da praia, hehe. Chefe, isso vai pra história da alcateia, né?"',
-  ], aoTerminar: () => { cena = null; if (CAP3.marcaVelejador) CAP3.marcaVelejador.visible = false; completa('c3_velejador'); CAP3.fase = 'fogueira'; c3Missao('c3_fogueira'); CAP3.marcaFogueira = criaEmoji('🔥', -186, -136, 6); CAP3.marcaFogueira.visible = true; sede.chamas.visible = true; aviso('Chefe Diego: "Mistério resolvido. Todo mundo pra fogueira da sede, que a Akelá tá esperando."', 4500); } };
+  ], aoTerminar: () => { cena = null; if (CAP3.marcaVelejador) CAP3.marcaVelejador.visible = false; Missoes.conclui('c3_velejador'); CAP3.fase = 'fogueira'; Missoes.da('c3_fogueira'); CAP3.marcaFogueira = criaEmoji('🔥', -186, -136, 6); CAP3.marcaFogueira.visible = true; sede.chamas.visible = true; aviso('Chefe Diego: "Mistério resolvido. Todo mundo pra fogueira da sede, que a Akelá tá esperando."', 4500); } };
   c2ProximaFala();
   setTimeout(() => { if (cena && cena.falas && cena.i >= 1) SOM.buzina(); }, 100);
   const buz = setInterval(() => { if (!cena || !cena.falas) return clearInterval(buz); if (cena.i === 1 && !cena.buzinou) { cena.buzinou = true; SOM.buzina(); aplicaEmote(CAP3.pipasNpc[2].npc.mesh, 'surpreso', 3); aplicaEmote(jogador, 'surpreso', 3); } }, 200);
@@ -343,11 +325,11 @@ function atualizaCap3(dt) {
 if (DEBUG && qs.has('cap3')) try {
   capituloEscolhido = 3; iniciaCap3(); cena = null; fadeEl.style.transition = 'none'; fadeEl.style.opacity = 0; textoNoite.style.opacity = 0; document.getElementById('hud').style.opacity = 1; CAP3.fase = 'akela';
   const f = qs.get('cap3');
-  const ok = ids => { for (const id of ids) { c3Missao(id); const m = missoes.find(x => x.id === id); if (m) m.ok = true; } renderMissoes(); };
-  if (f === 'materiais') { ok(['c3_akela', 'c3_pai']); CAP3.fase = 'materiais'; c3Missao('c3_bambu'); c3Missao('c3_papel'); c3Missao('c3_linha'); }
-  if (f === 'montar') { ok(['c3_akela', 'c3_pai', 'c3_bambu', 'c3_papel', 'c3_linha']); CAP3.bambus = 3; CAP3.temPapel = CAP3.temLinha = true; CAP3.fase = 'montar'; c3Missao('c3_montar'); estado.pos.set(pai.position.x + 2, pai.position.y, pai.position.z + 2); }
-  if (f === 'pipa') { ok(['c3_akela', 'c3_pai', 'c3_bambu', 'c3_papel', 'c3_linha', 'c3_montar']); CAP3.fase = 'praia'; c3Missao('c3_empinar'); estado.pos.set(C3.praia[0], altO(C3.praia[0], C3.praia[1]), -C3.praia[1]); if (qs.get('alt')) { iniciaPipa(); CAP3.pipa.altura = +qs.get('alt'); CAP3.pipa.linha = +qs.get('alt') + 10; atualizaPipa(0.001); cameraPipa(); camera.position.set(estado.pos.x - 3, estado.pos.y + 3 + CAP3.pipa.altura * 0.12, estado.pos.z - 9 - CAP3.pipa.altura * 0.08); cameraPipa(); } }
-  if (f === 'casinha') { ok(['c3_akela', 'c3_pai', 'c3_bambu', 'c3_papel', 'c3_linha', 'c3_montar', 'c3_empinar', 'c3_concurso']); CAP3.fase = 'casinha'; c3Missao('c3_casinha'); CAP3.pipa.mesh.visible = true; CAP3.pipa.mesh.position.set(SALVA[0] - 1.5, altO(SALVA[0], SALVA[1]) + 5.4, -SALVA[1] + 0.6); estado.pos.set(SALVA[0] + 4, altO(SALVA[0] + 4, SALVA[1] - 4), -SALVA[1] + 4); }
-  if (f === 'noite') { CAP3.continuar = 'noite'; retomaCap3Noite(); CAP3.fase = 'iate'; ok(['c3_grito']); c3Missao('c3_iate'); iniciaNoiteCap3(); estado.pos.set(230, altO(230, 200), -200); }
+  const ate = id => missoesSemAviso(() => Missoes.avancaAte(id));
+  if (f === 'materiais') { ate('c3_bambu'); missoesSemAviso(() => { Missoes.da('c3_papel'); Missoes.da('c3_linha'); }); CAP3.fase = 'materiais'; }
+  if (f === 'montar') { ate('c3_montar'); CAP3.bambus = 3; CAP3.temPapel = CAP3.temLinha = true; CAP3.fase = 'montar'; estado.pos.set(pai.position.x + 2, pai.position.y, pai.position.z + 2); }
+  if (f === 'pipa') { ate('c3_empinar'); CAP3.fase = 'praia'; estado.pos.set(C3.praia[0], altO(C3.praia[0], C3.praia[1]), -C3.praia[1]); if (qs.get('alt')) { iniciaPipa(); CAP3.pipa.altura = +qs.get('alt'); CAP3.pipa.linha = +qs.get('alt') + 10; atualizaPipa(0.001); cameraPipa(); camera.position.set(estado.pos.x - 3, estado.pos.y + 3 + CAP3.pipa.altura * 0.12, estado.pos.z - 9 - CAP3.pipa.altura * 0.08); cameraPipa(); } }
+  if (f === 'casinha') { ate('c3_casinha'); CAP3.fase = 'casinha'; CAP3.pipa.mesh.visible = true; CAP3.pipa.mesh.position.set(SALVA[0] - 1.5, altO(SALVA[0], SALVA[1]) + 5.4, -SALVA[1] + 0.6); estado.pos.set(SALVA[0] + 4, altO(SALVA[0] + 4, SALVA[1] - 4), -SALVA[1] + 4); }
+  if (f === 'noite') { CAP3.continuar = 'noite'; retomaCap3Noite(); CAP3.fase = 'iate'; ate('c3_iate'); iniciaNoiteCap3(); estado.pos.set(230, altO(230, 200), -200); }
   if (qs.get('pos')) { const [x, y] = qs.get('pos').split(',').map(Number); estado.pos.set(x, altO(x, y), -y); }
 } catch (e) { dbg('ERRO cap3 debug: ' + e.message + ' ' + (e.stack || '').split('\n')[0]); }

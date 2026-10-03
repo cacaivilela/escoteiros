@@ -120,6 +120,81 @@
   #aviso,#local,#dica,#madeira{background:linear-gradient(180deg,rgba(255,255,255,.08),transparent),repeating-linear-gradient(91deg,rgba(138,90,46,.92) 0 9px,rgba(150,102,59,.92) 9px 17px);border:2px solid #ffd54a;color:#fff8e0;text-shadow:0 1px 2px #2a1606}
   #minijogo,#destinos,#pausa div{background:repeating-linear-gradient(91deg,rgba(110,72,36,.93) 0 10px,rgba(122,80,40,.93) 10px 19px);box-shadow:0 6px 16px rgba(0,0,0,.5)}
   #mira{position:absolute;left:50%;top:50%;width:6px;height:6px;margin:-3px;border-radius:50%;background:rgba(255,255,255,.7)}
+
+  /* ---- distintivos, álbum e dicas (extras.js) ---- */
+  #painelDist,#painelAlbum{display:none;margin-top:10px;background:rgba(0,0,0,.4);padding:10px 16px;border-radius:12px;font-size:13px;text-align:left;cursor:default;max-width:680px;max-height:46vh;overflow:auto}
+  #painelDist .tit,#painelAlbum .tit{font-weight:bold;color:#ffd54a;margin-bottom:8px}
+  #painelDist .grade{display:grid;grid-template-columns:repeat(auto-fill,minmax(120px,1fr));gap:8px}
+  #painelDist .dist{text-align:center;padding:6px;border-radius:10px;background:rgba(255,255,255,.06)}
+  #painelDist .dist .em{display:inline-block;width:44px;height:44px;line-height:44px;font-size:24px;border-radius:50%;background:#fbf5e3;border:5px solid}
+  #painelDist .dist b{display:block;margin-top:4px}#painelDist .dist small{opacity:.75;font-size:11px}
+  #painelDist .dist.falta .em{filter:grayscale(1);opacity:.35;border-style:dashed}#painelDist .dist.falta b{opacity:.6}
+  #painelAlbum .fotos{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:8px}
+  #painelAlbum img{width:100%;border-radius:4px;cursor:pointer;box-shadow:0 2px 6px rgba(0,0,0,.5);transform:rotate(-1deg)}
+  #painelAlbum img:nth-child(2n){transform:rotate(1.5deg)}
+  #fotoGrande{display:none;position:fixed;inset:0;z-index:20;background:rgba(0,0,0,.85);flex-direction:column;align-items:center;justify-content:center;gap:12px;color:#fff}
+  #fotoGrande img{max-width:92vw;max-height:78vh;border:8px solid #fbf5e3;box-shadow:0 6px 20px #000}
+  #fotoGrande a,#fotoGrande span{color:#ffd54a;margin:0 10px;cursor:pointer;font-size:17px;text-decoration:none}
+  #btnContinuar{margin:6px 0 10px;font-size:17px;padding:10px 24px}#btnContinuar small{display:block;font-weight:normal;font-size:12px;opacity:.8;margin-top:2px}
+  #btnDicas{margin-top:10px;font-size:12px;opacity:.85;cursor:pointer}
+  #flash{position:fixed;inset:0;background:#fff;opacity:0;pointer-events:none;z-index:6}
+  #tutorial{position:absolute;left:50%;bottom:58px;transform:translateX(-50%);max-width:min(560px,86vw);background:#fbf5e3;color:#2a2a2a;text-shadow:none;border:3px solid #2f63c4;border-radius:12px;padding:8px 14px;font-size:15px;line-height:1.5;box-shadow:0 4px 10px rgba(0,0,0,.45);opacity:0;transition:opacity .4s}
+  #tutorial .tt{color:#2f63c4;margin-right:4px}
+  #tutorial kbd{display:inline-block;min-width:16px;padding:0 6px;margin:0 1px;border:1px solid #888;border-bottom-width:3px;border-radius:5px;background:#fff;font:bold 13px system-ui,sans-serif;text-align:center}
+  /* ---- celular e tablet (toque.js) ---- */
+  #toque{display:none;position:fixed;inset:0;z-index:8;touch-action:none;user-select:none;-webkit-user-select:none}
+  #toque .zona{position:absolute;top:0;bottom:0}#toque .zona.esq{left:0;width:45%}#toque .zona.dir{right:0;width:55%}
+  #toque .base{display:none;position:absolute;width:120px;height:120px;margin:-60px 0 0 -60px;border-radius:50%;background:rgba(255,255,255,.15);border:2px solid rgba(255,255,255,.5);pointer-events:none}
+  #toque .pino{position:absolute;left:35px;top:35px;width:50px;height:50px;border-radius:50%;background:rgba(255,213,74,.85)}
+  #toque b{display:inline-flex;align-items:center;justify-content:center;flex-direction:column;width:52px;height:52px;border-radius:50%;background:rgba(0,0,0,.45);border:2px solid rgba(255,255,255,.6);color:#fff;font-size:24px;line-height:1}
+  #toque b.apertado{background:rgba(255,213,74,.6)}#toque b.ligado{border-color:#ffd54a;background:rgba(255,213,74,.35)}
+  #toque .botoes{position:absolute;right:14px;bottom:14px;width:190px;display:flex;flex-wrap:wrap-reverse;justify-content:flex-end;gap:8px}
+  #toque b.grande{width:74px;height:74px;font-size:34px;order:-1}
+  #toque b.grande small{font-size:10px;white-space:nowrap;position:absolute;bottom:-15px;right:0;text-shadow:0 1px 2px #000}
+  #toque b.e{position:relative}
+  #toque .pausa{position:absolute;left:50%;top:8px;margin-left:-22px;width:44px;height:44px;font-size:18px}
+  #toque .setas{display:none;position:absolute;left:20px;bottom:20px;width:170px;height:170px}
+  #toque .setas b{position:absolute;width:58px;height:58px}
+  #toque .setas .cima{left:56px;top:0}#toque .setas .baixo{left:56px;bottom:0}#toque .setas .esq{left:0;top:56px}#toque .setas .dir{right:0;top:56px}
+  #toque .gire{display:none;position:absolute;left:50%;top:40%;transform:translateX(-50%);background:rgba(0,0,0,.75);color:#fff;padding:12px 18px;border-radius:12px;font-size:16px;pointer-events:none}
+  @media (orientation:portrait){#toque .gire{display:block}}
+  body.toque #dica{display:none}
+  body.toque #missao{font-size:11px;line-height:16px;max-width:38vw;padding:8px 10px 8px 30px;background-size:auto}
+  body.toque #missao h3{font-size:12px}
+  body.toque #minimapa{width:110px;height:110px}
+  body.toque #local{left:50%;bottom:auto;top:58px;transform:translateX(-50%);font-size:12px;padding:3px 10px}
+  body.toque #tutorial{top:auto;bottom:100px;font-size:13px}
+  body.toque #minijogo{bottom:auto;top:12px;min-width:0;max-width:60vw;font-size:13px;padding:8px 12px}
+  /* ---- menu numa tela só (1366×768 e notebooks): botões secundários em linha, controles escondidos, cartões iguais ---- */
+  #inicio .linhaBtns{display:flex;flex-wrap:wrap;justify-content:center;gap:10px;margin-top:12px}
+  #inicio .linhaBtns .btn2{margin-top:0}
+  #inicio .linhaBtns .btn2.aberto{border-color:#ffd54a;background:#6b5314}
+  #painelControles{display:none;margin-top:10px;background:rgba(0,0,0,.4);padding:10px 16px;border-radius:12px;font-size:14px;line-height:1.6;max-width:680px;cursor:default}
+  #inicio .escolha .perso{flex:0 0 300px;box-sizing:border-box}
+  #inicio .btn{margin-top:14px}
+  @media (max-height:820px){#inicio{padding-top:14px}#inicio h1{font-size:40px;margin-top:30px;padding:8px 32px 6px}#inicio h2{margin:36px 0 10px;font-size:16px}#inicio p{margin:6px 0}#inicio .perso{padding:8px 14px}#inicio .av{width:44px;height:44px}}
+  @media (max-width:680px){#inicio .escolha{flex-direction:column;align-items:center}#inicio .escolha .perso{flex-basis:auto;width:min(300px,86vw)}}
+  /* painéis do menu abrem grandes, por cima de tudo (eram caixinhas de 46% da altura espremidas no meio do menu) */
+  #personalizar,#mods,#painelDist,#painelAlbum,#painelControles,#painelOnline{position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);z-index:13;width:min(960px,92vw);max-width:none;max-height:84vh;overflow:auto;box-sizing:border-box;margin:0;padding:22px 26px;font-size:15px;background:#183520;border:3px solid #ffd54a;border-radius:16px;box-shadow:0 10px 40px rgba(0,0,0,.7)}
+  #fundoPainel{display:none;position:fixed;inset:0;z-index:12;background:rgba(0,0,0,.6)}
+  #fechaPainel{display:none;position:fixed;z-index:14;right:max(4vw,calc(50% - 480px - 10px));top:calc(8vh - 18px);width:40px;height:40px;border-radius:50%;background:#ffd54a;color:#3b2a0a;font:bold 22px/40px sans-serif;text-align:center;cursor:pointer;box-shadow:0 3px 0 #b8952a}
+  #painelDist .grade{grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:12px}
+  #painelDist .dist .em{width:64px;height:64px;line-height:64px;font-size:34px}
+  #painelDist .tit,#painelAlbum .tit{font-size:20px}
+  #painelAlbum .fotos{grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:14px}
+  /* item do menu escolhido com o controle (◀▶▲▼) */
+  #inicio .foco{box-shadow:0 0 0 4px #ffd54a,0 0 22px rgba(255,213,74,.9) !important;transform:scale(1.06) !important}
+  /* ---- online (online.js) ---- */
+  #painelOnline{display:none}
+  #painelOnline .tit{font-weight:bold;color:#ffd54a;font-size:20px;margin-bottom:8px}
+  #painelOnline button{background:#ffd54a;color:#222;border:0;border-radius:10px;padding:8px 16px;font-weight:bold;cursor:pointer;font-size:15px}
+  #painelOnline button.sec{background:rgba(255,255,255,.2);color:#fff}
+  #painelOnline input{background:rgba(0,0,0,.4);color:#fff;border:2px solid #ffd54a;border-radius:8px;padding:7px 10px;font-size:16px;text-transform:uppercase;letter-spacing:2px}
+  #painelOnline .codigo{font:bold 46px/1.1 monospace;letter-spacing:6px;color:#ffd54a;text-align:center;margin:8px 0;padding:8px;border:3px dashed #ffd54a;border-radius:14px}
+  #painelOnline .msg{color:#ffb3a8}
+  #hudOnline{display:none;position:absolute;left:50%;top:14px;transform:translateX(-50%);background:rgba(0,0,0,.5);padding:4px 12px;border-radius:10px;font-size:13px;border:1px solid #7ee0ff}
+  #frasesOnline{display:none;position:absolute;left:14px;top:50%;transform:translateY(-50%);background:#fbf5e3;color:#2a2a2a;text-shadow:none;border:3px solid #2f63c4;border-radius:12px;padding:10px 14px;font-size:15px;line-height:1.7}
+  #frasesOnline kbd{display:inline-block;min-width:16px;padding:0 6px;border:1px solid #888;border-bottom-width:3px;border-radius:5px;background:#fff;font:bold 13px system-ui;text-align:center}
 </style>
 </head>
 <body>
@@ -127,23 +202,31 @@
   <h1>ESCOTEIROS</h1>
   <h2>Camping Municipal da Lagoa dos Patos — São Lourenço do Sul, RS</h2>
   <p>Lara e Caio são irmãos gêmeos e lobinhos da alcateia do Grupo Escoteiro Garibaldi. Escolha com quem jogar. Explore os 12 hectares do camping, faça a bandeira com a alcateia na árvore em frente à cantina, cumpra as tarefas e chegue à beira da Lagoa dos Patos.</p>
-  <p><b>W A S D</b> mover · <b>Shift</b> correr · <b>Espaço</b> pular · <b>Mouse</b> câmera · <b>E</b> interagir · <b>Q</b> habilidade · <b>M</b> mapa · <b>1-4</b> emotes · <b>N</b> som<br><b>🎮 Controle (Xbox/Recalbox):</b> Start entra (até 4 jogadores em tela dividida) · analógicos movem/câmera · A pula · X interage · LB habilidade · RT corre · D-pad emotes · Back sai<br><small>Dudu ⚡ Doidera (corre 2x) · Maria 🍪 Biscoito: o Fantasma vem e leva ela pra onde escolher · 2 galhos = 1 madeira</small></p>
   <div class="escolha">
     <div class="perso sel" data-id="lara"><div class="av lara"></div><b>Lara</b><small>cabelo preto e comprido<br>🪢 Macramê: tece uma corda e sobe nas árvores</small></div>
     <div class="perso" data-id="caio"><div class="av caio"></div><b>Caio</b><small>cabelo preto, cacheado e curto<br>🥁 Batucada: baquetas nas árvores derrubam galhos/madeira</small></div>
   </div>
+  <div class="btn" id="btnContinuar" style="display:none"></div>
   <div class="caps">📖 Capítulo: <span class="cap sel" data-cap="1">1 — O acampamento</span><span class="cap" data-cap="2">2 — Uma semana depois</span><span class="cap" data-cap="3">3 — Mais um sábado</span><span class="cap" data-cap="4">4 — O Distrital</span></div>
-  <div class="btn2" id="btnPersonalizar">🎨 Personalizar</div>
-  <div id="personalizar"></div>
-  <div class="btn2" id="btnMods">🧩 Mods e mais</div>
-  <div id="mods"></div>
   <div class="btn">Clique para começar</div>
+  <div id="btnDicas"></div>
+  <div class="linhaBtns"><span class="btn2" id="btnPersonalizar">🎨 Personalizar</span><span class="btn2" id="btnMods">🧩 Mods e mais</span><span class="btn2" id="btnDistintivos">🎖️ Distintivos</span><span class="btn2" id="btnAlbum">📷 Álbum de fotos</span><span class="btn2" id="btnOnline">🌐 Jogar online</span><span class="btn2" id="btnControles">❓ Controles</span></div>
+  <div id="personalizar"></div>
+  <div id="mods"></div>
+  <div id="painelDist"></div>
+  <div id="painelAlbum"></div>
+  <div id="fundoPainel"></div><div id="fechaPainel" title="Fechar (Esc)">✖</div>
+  <div id="painelOnline"></div>
+  <div id="painelControles"><b>W A S D</b> mover · <b>Shift</b> correr · <b>Espaço</b> pular · <b>Mouse</b> câmera · <b>E</b> interagir · <b>Q</b> habilidade · <b>M</b> mapa · <b>P</b> foto · <b>1-4</b> emotes · <b>N</b> som<br><b>🎮 Controle (Xbox/Recalbox):</b> Start entra (até 4 jogadores em tela dividida) · analógicos movem/câmera · A pula · X interage · LB habilidade · RT corre · D-pad emotes · Back sai<br><small>Dudu ⚡ Doidera (corre 2x) · Maria 🍪 Biscoito: o Fantasma vem e leva ela pra onde escolher · 2 galhos = 1 madeira</small><br><b>🎮 Controle do Recalbox ou outro genérico:</b> na primeira vez o jogo pergunta qual botão faz cada coisa. <u id="resetaPads" style="cursor:pointer;color:#ffd54a">🔄 Configurar os controles de novo</u></div>
   <div class="mgs">🎮 Minigames:
     <span class="mg" data-mini="bandeira">🚩 Bandeira</span><span class="mg" data-mini="fogo">🔥 Fogueira</span><span class="mg" data-mini="martelar">🔨 Martelar</span><span class="mg" data-mini="serrar">🪚 Serrar</span><span class="mg" data-mini="amarrar">🪢 Amarrar</span><span class="mg" data-mini="pesca">🎣 Pesca</span><span class="mg" data-mini="bocha">🎯 Bocha</span><span class="mg" data-mini="futebol">⚽ Futebol</span>
   </div>
   <p style="font-size:12px;opacity:.6;margin-top:14px">🔊 Clique ou aperte uma tecla para ouvir a palma escoteira</p>
 </div>
 <div id="fade"></div>
+<div id="flash"></div>
+<div id="fotoGrande"></div>
+<div id="toque"></div>
 <div id="btnCap2">▶ Capítulo 2 — uma semana depois</div>
 <div id="pausa"><div>⏸ Pausado — clique para continuar</div></div>
 <div id="textoNoite"></div>
@@ -154,6 +237,9 @@
   <div id="dica">E para interagir</div>
   <div id="aviso"></div>
   <div id="balao"></div>
+  <div id="tutorial"></div>
+  <div id="hudOnline"></div>
+  <div id="frasesOnline"></div>
   <div id="escolhaPad"></div>
 <div id="destinos"></div>
 <div id="minijogo"></div>
@@ -164,17 +250,25 @@
 <script src="som.js?v=2"></script>
 <script src="mapa.js?v=2"></script>
 <!-- motor (lógica genérica) e dados (conteúdo: fichas, itens, lugares, missões, falas) — carregam antes do jogo -->
-<script src="motor/missoes.js?v=1"></script>
+<script src="motor/missoes.js?v=2"></script>
 <script src="motor/dialogos.js?v=1"></script>
 <script src="dados/personagens.js?v=1"></script>
-<script src="dados/itens.js?v=1"></script>
+<script src="dados/itens.js?v=2"></script>
 <script src="dados/cap1_lugares.js?v=1"></script>
 <script src="dados/cap1_missoes.js?v=1"></script>
 <script src="dados/cap1_dialogos.js?v=1"></script>
-<script src="game.js?v=3"></script>
-<script src="cap2.js?v=2"></script>
-<script src="cap3.js?v=2"></script>
-<script src="cap4.js?v=2"></script>
-<script src="mods.js?v=1"></script>
+<script src="dados/cap2_missoes.js?v=1"></script>
+<script src="dados/cap3_missoes.js?v=1"></script>
+<script src="dados/cap4_missoes.js?v=1"></script>
+<script src="dados/distintivos.js?v=1"></script>
+<script src="game.js?v=11"></script>
+<script src="cap2.js?v=3"></script>
+<script src="cap3.js?v=3"></script>
+<script src="cap4.js?v=3"></script>
+<script src="mods.js?v=3"></script>
+<script src="extras.js?v=3"></script>
+<script src="toque.js?v=1"></script>
+<script src="grama.js?v=6"></script>
+<script src="online.js?v=1"></script>
 </body>
 </html>

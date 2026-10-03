@@ -5,7 +5,7 @@
 
 // ---------- utilidades ----------
 const rnd = (a, b) => a + Math.random() * (b - a);
-const MOD = { vel: 1, pulo: 1, grav: 1, escala: 1 };   // multiplicadores dos mods (mods.js)
+const MOD = { vel: 1, pulo: 1, grav: 1, escala: 1, gordo: 1, alto: 1, cabeca: 1, voa: false, atravessa: false };   // multiplicadores e poderes dos mods (mods.js)
 const P = (x, y) => new THREE.Vector3(x, 0, -y);          // osm (x,y) -> mundo
 function pontoNoPoligono(x, y, poly) {
   let dentro = false;
@@ -273,6 +273,24 @@ function terreno() {
 }
 
 // ---------- vegetação (mata nativa) ----------
+// touceira: n folhas finas saindo do mesmo pé, cada uma virada pra um lado e curvando pra fora (abre = quanto deita na ponta).
+// Era um cone ("pirâmide espichada"); folhas soltas parecem capim de verdade. Normal pra cima: a folha não escurece de costas.
+function touceira(n, alto, larg, abre) {
+  const pos = [], nor = [], idx = [], G = 4;
+  for (let f = 0; f < n; f++) {
+    const a = f / n * Math.PI * 2 + rnd(-0.3, 0.3), ca = Math.cos(a), sa = Math.sin(a), h = alto * rnd(0.65, 1), ab = abre * rnd(0.6, 1.3), b = pos.length / 3;
+    for (let s = 0; s <= G; s++) {
+      const t = s / G, w = larg * (1 - t * 0.9) / 2, sai = ab * t * t * h, y = h * t * (1 - 0.25 * ab * t);
+      const cx = ca * sai, cz = sa * sai;                 // centro da folha nessa altura
+      pos.push(cx - sa * w, y, cz + ca * w, cx + sa * w, y, cz - ca * w);
+      nor.push(0, 1, 0, 0, 1, 0);
+      if (s < G) idx.push(b + s * 2, b + s * 2 + 1, b + s * 2 + 2, b + s * 2 + 1, b + s * 2 + 3, b + s * 2 + 2);
+    }
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g.setAttribute('normal', new THREE.Float32BufferAttribute(nor, 3)); g.setIndex(idx);
+  return g;
+}
 const arvores = [];
 function vegetacao() {
   const zonasLivres = []; // (x,y,r) em osm onde não nascem árvores
@@ -365,8 +383,8 @@ function vegetacao() {
   scene.add(arb);
 
   // juncos em touceiras na beira da lagoa (fora da praia)
-  const gJ = new THREE.ConeGeometry(0.045, 1.5, 4); gJ.translate(0, 0.75, 0);
-  const junco = new THREE.InstancedMesh(gJ, matVento(new THREE.MeshLambertMaterial({ color: 0x86a84e }), 0.09), 1500);
+  const gJ = touceira(6, 1.5, 0.05, 0.18);   // junco: folhas compridas e quase retas
+  const junco = new THREE.InstancedMesh(gJ, matVento(new THREE.MeshLambertMaterial({ color: 0x86a84e, side: THREE.DoubleSide }), 0.09), 1500);
   let nj = 0, touceiras = 0; guard = 0;
   while (touceiras < 150 && nj < 1480 && guard++ < 40000) {
     const x = rnd(REL.x0, REL.x1), y = rnd(REL.y0, REL.y1);
@@ -383,9 +401,9 @@ function vegetacao() {
 
   // flores e tufos de capim no gramado
   const gFl = new THREE.SphereGeometry(0.1, 5, 4); gFl.translate(0, 0.2, 0);
-  const gCa = new THREE.ConeGeometry(0.16, 0.5, 5); gCa.translate(0, 0.22, 0);
+  const gCa = touceira(9, 0.5, 0.07, 0.55);   // tufo de capim: folhas que abrem pra fora
   const flores = new THREE.InstancedMesh(gFl, matVento(new THREE.MeshLambertMaterial({ color: 0xffffff }), 0.05), 1600);
-  const capim = new THREE.InstancedMesh(gCa, matVento(new THREE.MeshLambertMaterial({ color: 0x5f9a38 }), 0.12), 2600);
+  const capim = new THREE.InstancedMesh(gCa, matVento(new THREE.MeshLambertMaterial({ color: 0x5f9a38, side: THREE.DoubleSide }), 0.12), 2600);
   const PALETA = [0xffd23f, 0xffd23f, 0xb07bd8, 0xffffff, 0xff7a7a, 0xffa94d];
   const semeia = (im, max, cor) => {
     let n = 0, g = 0;
@@ -1013,6 +1031,11 @@ function escoteiro(opts) {
   if (g.userData.aura) g.userData.aura.castShadow = false;   // a aura fazia uma sombra de ovo gigante
   chapeu.traverse(o => { if (o.isMesh) o.castShadow = false; });
   cabelo.traverse(o => { if (o.isMesh) o.castShadow = false; });
+  // cabeça (com olhos, boca, cabelo, boné, óculos) num grupo que cresce a partir do pescoço — mod "Cabeça".
+  // As peças continuam com as coordenadas de sempre (o grupo fica parado em 1×), então emotes e boca falando não mudam.
+  { const cabecaG = new THREE.Group(), bx = new THREE.Box3(), cc = new THREE.Vector3(); g.updateMatrixWorld(true);
+    for (const o of Array.from(g.children)) if (o === cabeca || o === cabelo || o === chapeu || (bx.setFromObject(o).getCenter(cc).y > 1.5 && cc.y < 2.6)) { g.remove(o); cabecaG.add(o); }
+    g.add(cabecaG); g.userData.cabecaG = cabecaG; }
   g.scale.setScalar(s); g.userData.escala = s;
   suaviza(g);
   g.userData = Object.assign(g.userData || {}, { pernaE, pernaD, bracoE, bracoD, lenco: pivoLenco, olhos: [olhoE, olhoD], sobs, boca, emote: 'feliz', emoteAte: 0, falandoAte: 0 });
@@ -1475,29 +1498,32 @@ function cameraDaCena() {
 }
 
 // ---------- missões ----------
-// `missoes` é a lista que aparece no HUD. No capítulo 1 quem manda nela é o motor (motor/missoes.js + dados/cap1_missoes.js):
-// a lista começa VAZIA e cada missão entra quando alguém dá. A noite, o dia 2 e os capítulos 2-4 ainda escrevem
-// direto na lista (próximo passo: passar eles pro motor também).
+// `missoes` é a lista que aparece no HUD. Nos capítulos 1 a 4 quem manda nela é o motor (motor/missoes.js + dados/capN_missoes.js):
+// a lista começa VAZIA e cada missão entra quando alguém dá; cada capítulo começa com Missoes.carrega(...) e a lista recomeça.
+// A noite e o dia 2 do cap. 1 e os capítulos do DLC (mods.js) ainda escrevem direto na lista.
 const missoes = [];
 const lista = document.getElementById('lista');
 function renderMissoes() {
   lista.innerHTML = missoes.length ? missoes.map(m => `<li class="${m.ok ? 'ok' : ''}">${m.txt}</li>`).join('') : '<li style="list-style:none;margin-left:-18px;opacity:.7">Nenhuma tarefa ainda — fale com as pessoas.</li>';
 }
-// conclui uma missão: pelo motor se ele conhece o id; senão do jeito antigo (noite, dia 2, capítulos 2-4)
+// conclui uma missão: pelo motor se ele conhece o id; senão do jeito antigo (noite e dia 2 do cap. 1, DLC)
 function completa(id) {
   if (Missoes.existe(id) && Missoes.conclui(id)) return;
   const m = missoes.find(x => x.id === id); if (!m || m.ok) return;
   m.ok = true; renderMissoes(); aviso('✔ ' + m.txt, 3000); SOM.missao();
 }
 Missoes.dentro = (lugar, x, y) => !!MAPA[lugar] && pontoNoPoligono(x, y, MAPA[lugar]);
-let emAtalho = false;   // atalhos de debug marcam missões sem avisos/som
+let emAtalho = false;   // atalhos de debug e "retomar" marcam missões sem avisos/som
+function missoesSemAviso(f) { const antes = emAtalho; emAtalho = true; try { return f(); } finally { emAtalho = antes; } }
+// carregou um capítulo ou importou um save: a lista do HUD vira exatamente o que o motor diz
+Missoes.ao('recarrega', () => { missoes.splice(0, missoes.length, ...Missoes.lista().map(m => ({ id: m.id, txt: m.txt, ok: m.ok, n: m.n }))); renderMissoes(); });
 Missoes.ao('ativa', id => { if (!missoes.find(m => m.id === id)) missoes.push({ id, txt: Missoes.texto(id), ok: false, n: 0 }); renderMissoes(); if (emAtalho) return; aviso('📋 Nova tarefa: ' + Missoes.texto(id), 3500); SOM.missao(); });
 Missoes.ao('muda', id => { const m = missoes.find(x => x.id === id); if (m) { m.txt = Missoes.texto(id); m.n = Missoes.progresso(id); renderMissoes(); } });
 Missoes.ao('concluida', id => {
   const m = missoes.find(x => x.id === id); if (m) { m.ok = true; m.txt = Missoes.texto(id); }
   renderMissoes(); if (emAtalho) return; aviso('✔ ' + Missoes.texto(id), 3000); SOM.missao();
   const faltam = Missoes.todas().filter(x => !Missoes.def(x).opcional && !Missoes.concluida(x));
-  if (!dia2 && !noite && !noite2 && !faltam.length && !Missoes.ativas().length) setTimeout(() => { aviso('🐺 Tarefas do dia concluídas! Agora vá dormir na barraca da sede... se conseguir.', 8000); SOM.fim(); }, 3200);
+  if (capAtual() === 1 && !dia2 && !noite && !noite2 && !faltam.length && !Missoes.ativas().length) setTimeout(() => { aviso('🐺 Tarefas do dia concluídas! Agora vá dormir na barraca da sede... se conseguir.', 8000); SOM.fim(); }, 3200);
 });
 Missoes.ao('erro', msg => { if (location.search.includes('debug')) aviso('MISSÕES: ' + msg, 5000); });
 Missoes.carrega(DADOS.cap1Missoes);
@@ -1737,18 +1763,57 @@ let p1Pad = null;                // índice do controle do jogador 1 (opcional)
 const padsAntes = {};            // estado anterior dos botões, por índice de controle
 const ZM = 0.2;
 const dz = v => Math.abs(v) < ZM ? 0 : (v - Math.sign(v) * ZM) / (1 - ZM);
+// ---- qual botão faz o quê, por controle ----
+// Controle "standard" (Xbox, PlayStation, 8BitDo no modo X): o navegador já entrega na ordem padrão.
+// Os genéricos (os USB tipo Super Nintendo do Recalbox) mandam os botões em qualquer ordem: na primeira vez que um deles
+// aperta um botão, o jogo pergunta qual é qual (configuraPad) e guarda pelo nome do controle. Dá pra misturar à vontade:
+// um Xbox de jogador 1 e um do Recalbox de jogador 2, por exemplo. O D-pad desses costuma vir como eixo: já anda e escolhe.
+const PAD_PADRAO = { pular: 0, b: 1, interagir: 2, mapa: 3, habilidade: 4, correr: 7, start: 9, voltar: 8, foto: 11, dpad: true };
+let padsMapas = {}; try { padsMapas = JSON.parse(localStorage.getItem('escoteiros.controles') || '{}') || {}; } catch (e) {}
+const mapaDoPad = gp => padsMapas[gp.id] || (gp.mapping === 'standard' ? PAD_PADRAO : null);
+const apertado = (gp, i) => i !== undefined && i !== null && !!(gp.buttons[i] && (gp.buttons[i].pressed || gp.buttons[i].value > 0.5));
+// assistente: "aperte o botão de PULAR"… um passo por ação; o que ele aperta vira o botão daquela ação
+const PASSOS_PAD = [['pular', 'PULAR (e confirmar)'], ['interagir', 'INTERAGIR (falar, pegar)'], ['habilidade', 'HABILIDADE'], ['mapa', 'MAPA'], ['correr', 'CORRER'], ['start', 'START (começar / pausar)'], ['voltar', 'SAIR / VOLTAR']];
+let configPad = null;
+function configuraPad(idx, gp) {
+  configPad = { idx, id: gp.id, passo: 0, mapa: {}, antes: new Set(gp.buttons.map((x, i) => apertado(gp, i) ? i : -1).filter(i => i >= 0)) };
+  desenhaConfigPad();
+}
+function desenhaConfigPad() {
+  const [, nome] = PASSOS_PAD[configPad.passo];
+  escolhaEl.style.display = 'block';
+  escolhaEl.innerHTML = '🎮 <b>Controle novo</b><br><small>' + configPad.id.slice(0, 40) + '</small><br>Aperte o botão de<br><span class="nomeP">' + nome + '</span><br><small>' + (configPad.passo + 1) + ' de ' + PASSOS_PAD.length + '</small>';
+}
+function atualizaConfigPad() {
+  const gp = navigator.getGamepads && navigator.getGamepads()[configPad.idx];
+  if (!gp || gp.id !== configPad.id) { configPad = null; escolhaEl.style.display = 'none'; return; }   // desligou no meio
+  const agora = new Set(gp.buttons.map((x, i) => apertado(gp, i) ? i : -1).filter(i => i >= 0));
+  const novo = [...agora].find(i => !configPad.antes.has(i)); configPad.antes = agora;
+  if (novo === undefined) return;
+  configPad.mapa[PASSOS_PAD[configPad.passo][0]] = novo; SOM.tap();
+  if (++configPad.passo < PASSOS_PAD.length) return desenhaConfigPad();
+  const m = Object.assign({ b: configPad.mapa.voltar }, configPad.mapa);
+  padsMapas[configPad.id] = m; try { localStorage.setItem('escoteiros.controles', JSON.stringify(padsMapas)); } catch (e) {}
+  padsAntes[configPad.idx] = Object.fromEntries(gp.buttons.map((x, i) => [i, apertado(gp, i)]));   // o último botão não vale como "apertou" de novo
+  escolhaEl.style.display = 'none'; aviso('🎮 Controle configurado! Aperte START pra entrar no jogo.', 4000); SOM.entrou();
+  configPad = null;
+}
 function lerPad(idx) {
   const gp = navigator.getGamepads && navigator.getGamepads()[idx];
   if (!gp) return null;
-  const b = i => !!(gp.buttons[i] && (gp.buttons[i].pressed || gp.buttons[i].value > 0.5));
+  const m = mapaDoPad(gp); if (!m || (configPad && configPad.idx === idx)) return null;
+  const b = i => apertado(gp, i);
   const antes = padsAntes[idx] || {};
   const edge = i => b(i) && !antes[i];
+  const dp = !!m.dpad;   // D-pad como botões 12-15 (padrão); nos genéricos ele vem nos eixos 0/1
   const r = { mx: dz(gp.axes[0] || 0), mz: dz(gp.axes[1] || 0), cx: dz(gp.axes[2] || 0), cy: dz(gp.axes[3] || 0),
-    pular: b(0), correr: b(7) || b(1) || b(10), interagir: edge(2), mapa: edge(3), start: edge(9), voltar: edge(8), habilidade: edge(4),
-    emote: edge(12) ? 'feliz' : edge(13) ? 'triste' : edge(14) ? 'bravo' : edge(15) ? 'surpreso' : null,
-    esq: edge(14) || (dz(gp.axes[0] || 0) < -0.6 && !(antes.stickEsq)), dir: edge(15) || (dz(gp.axes[0] || 0) > 0.6 && !(antes.stickDir)), a: edge(0) };
-  const novo = {}; for (let i = 0; i < 16; i++) novo[i] = b(i);
-  novo.stickEsq = dz(gp.axes[0] || 0) < -0.6; novo.stickDir = dz(gp.axes[0] || 0) > 0.6;
+    pular: b(m.pular), correr: b(m.correr) || (m === PAD_PADRAO && (b(1) || b(10))), interagir: edge(m.interagir), mapa: edge(m.mapa), start: edge(m.start), voltar: edge(m.voltar), habilidade: edge(m.habilidade),
+    emote: dp ? (edge(12) ? 'feliz' : edge(13) ? 'triste' : edge(14) ? 'bravo' : edge(15) ? 'surpreso' : null) : null,
+    esq: (dp && edge(14)) || (dz(gp.axes[0] || 0) < -0.6 && !(antes.stickEsq)), dir: (dp && edge(15)) || (dz(gp.axes[0] || 0) > 0.6 && !(antes.stickDir)), a: edge(m.pular), b: edge(m.b),
+    cima: (dp && edge(12)) || (dz(gp.axes[1] || 0) < -0.6 && !(antes.stickCima)), baixo: (dp && edge(13)) || (dz(gp.axes[1] || 0) > 0.6 && !(antes.stickBaixo)),
+    foto: edge(m.foto), segurandoX: b(m.interagir) };
+  const novo = {}; for (let i = 0; i < gp.buttons.length; i++) novo[i] = b(i);
+  novo.stickEsq = dz(gp.axes[0] || 0) < -0.6; novo.stickDir = dz(gp.axes[0] || 0) > 0.6; novo.stickCima = dz(gp.axes[1] || 0) < -0.6; novo.stickBaixo = dz(gp.axes[1] || 0) > 0.6;
   padsAntes[idx] = novo;
   return r;
 }
@@ -1852,14 +1917,17 @@ function atualizaExtra(j, dt) {
   j.camera.position.lerp(pc, Math.min(1, dt * 16)); j.camera.lookAt(alvoCam);
 }
 function procuraNovosPads() {
+  if (configPad) atualizaConfigPad();
   const gps = navigator.getGamepads ? navigator.getGamepads() : [];
   for (let i = 0; i < gps.length; i++) {
     const gp = gps[i]; if (!gp) continue;
     if (i === p1Pad || jogadores.some(j => j.pad === i)) continue;
+    if (!mapaDoPad(gp)) { if (!configPad && gp.buttons.some((x, k) => apertado(gp, k))) { ligaSom(); configuraPad(i, gp); } continue; }   // controle genérico novo: pergunta os botões
     const inp = lerPad(i); if (!inp) continue;
     if (inp.start || inp.a) {
       ligaSom();
-      if (p1Pad === null && !inicio.style.display.match(/none/) ) { p1Pad = i; aviso('🎮 Controle ligado ao Jogador 1', 2500); if (!travado) { inicio.style.display = 'none'; travado = true; if (!introFeita) { if (capituloEscolhido >= 2) iniciaCapitulo(); else iniciaIntro(); } } }
+      // no menu: o controle vira o jogador 1 e navega (◀▶▲▼ + A); Start já começa com o que estiver escolhido
+      if (p1Pad === null && !inicio.style.display.match(/none/) ) { p1Pad = i; aviso('🎮 Controle ligado! ◀▶▲▼ escolhe · A confirma · Start começa', 4000); if (inp.start) comecaPeloControle(); }
       else if (p1Pad === null) { p1Pad = i; aviso('🎮 Controle ligado ao Jogador 1', 2500); }
       else novoJogador(i);
     }
@@ -2701,6 +2769,8 @@ function abreMini(tipo, etapa) {
   else mini = { tipo, t: 0, carga: 0, segurando: false, faiscas: 0, precisa: estado.temPederneira ? 2 : 3, msg: estado.temPederneira ? 'Com a pederneira: segure E e solte na zona laranja (2 faíscas)!' : 'Segure E pra riscar e solte na zona laranja (3 faíscas)!' };
   miniEl.style.display = 'block'; desenhaMini();
 }
+// minijogo vencido: extras.js dá o distintivo (definida lá; aqui só não quebra se ele não carregou)
+function venceuMini(tipo) { if (typeof ganhaDistintivo === 'function') ganhaDistintivo(tipo); }
 function fechaMini() { mini = null; miniEl.style.display = 'none'; if (typeof vara !== 'undefined') { vara.visible = false; boia.visible = false; } }
 const SETAS = { ArrowUp: '↑', ArrowDown: '↓', ArrowLeft: '←', ArrowRight: '→' };
 function novaSeq() { const ks = Object.keys(SETAS), n = 4 + Math.floor(Math.random() * 3); return Array.from({ length: n }, () => ks[Math.floor(Math.random() * 4)]); }
@@ -2743,7 +2813,7 @@ function desenhaMini() {
 }
 function miniSeta(k) {
   if (!mini || mini.tipo !== 'amarrar') return;
-  if (k === mini.seq[mini.i]) { mini.i++; SOM.tap(); if (mini.i >= mini.seq.length) { mini.feitos++; mini.i = 0; mini.seq = novaSeq(); mini.msg = 'Nó firme! 🪢'; SOM.coleta(); if (mini.feitos >= mini.precisa) { const l = mini.livre; fechaMini(); if (l) fimLivre(); else etapaConcluida(); return; } } }
+  if (k === mini.seq[mini.i]) { mini.i++; SOM.tap(); if (mini.i >= mini.seq.length) { mini.feitos++; mini.i = 0; mini.seq = novaSeq(); mini.msg = 'Nó firme! 🪢'; SOM.coleta(); if (mini.feitos >= mini.precisa) { const l = mini.livre; venceuMini(mini.tipo); fechaMini(); if (l) fimLivre(); else etapaConcluida(); return; } } }
   else { mini.i = 0; mini.msg = 'Escapou a corda! Começa o nó de novo.'; SOM.grr(); }
   desenhaMini();
 }
@@ -2764,7 +2834,7 @@ function miniTecla(down) {
     mini.jogadas++; mini.melhor = Math.min(mini.melhor, dist);
     mini.msg = dist < 1 ? 'ENCOSTOU no bolim! 🎯' : dist < 3 ? 'Boa, ' + dist.toFixed(1) + ' m do bolim' : mini.pos < 0.65 ? 'Curta demais (' + dist.toFixed(1) + ' m)' : 'Passou longe (' + dist.toFixed(1) + ' m)';
     SOM.tap(); bolaBocha(mini.pos);
-    if (mini.jogadas >= mini.precisa) { const l = mini.livre, ok = mini.melhor < 3; fechaMini(); aviso(ok ? '🎯 Bocha: melhor jogada a ' + mini.melhor.toFixed(1) + ' m do bolim. Mandou bem!' : '🎯 Bocha: melhor jogada a ' + mini.melhor.toFixed(1) + ' m. Treina mais!', 4000); if (l) fimLivre(); else if (ok) SOM.missao(); return; }
+    if (mini.jogadas >= mini.precisa) { const l = mini.livre, ok = mini.melhor < 3; if (ok) venceuMini('bocha'); fechaMini(); aviso(ok ? '🎯 Bocha: melhor jogada a ' + mini.melhor.toFixed(1) + ' m do bolim. Mandou bem!' : '🎯 Bocha: melhor jogada a ' + mini.melhor.toFixed(1) + ' m. Treina mais!', 4000); if (l) fimLivre(); else if (ok) SOM.missao(); return; }
     desenhaMini(); return;
   }
   if (mini.tipo === 'futebol') {
@@ -2773,20 +2843,20 @@ function miniTecla(down) {
     const defendeu = Math.abs(mini.pos - mini.goleiro) < 0.13;
     if (defendeu) { mini.msg = 'DEFENDEU! O goleiro pegou.'; SOM.grr(); } else { mini.gols++; mini.msg = 'GOOOL! ⚽'; SOM.coleta(); }
     bolaFutebol(mini.pos, !defendeu);
-    if (mini.chutes >= mini.precisa) { const l = mini.livre, g = mini.gols; fechaMini(); aviso('⚽ ' + g + ' gol(s) em 5 chutes!' + (g >= 3 ? ' Artilheiro da alcateia!' : ''), 4000); if (l) fimLivre(); else if (g >= 3) SOM.missao(); return; }
+    if (mini.chutes >= mini.precisa) { const l = mini.livre, g = mini.gols; if (g >= 3) venceuMini('futebol'); fechaMini(); aviso('⚽ ' + g + ' gol(s) em 5 chutes!' + (g >= 3 ? ' Artilheiro da alcateia!' : ''), 4000); if (l) fimLivre(); else if (g >= 3) SOM.missao(); return; }
     desenhaMini(); return;
   }
   if (mini.tipo === 'martelar') {
     if (!down) return;
     if (Math.abs(mini.pos - mini.prego) < 0.075) { mini.feitos++; mini.prego = rnd(0.12, 0.88); mini.msg = ['Pregou!', 'Bem no meio!', 'Mais um!', 'Tá ficando firme!'][mini.feitos % 4]; SOM.tap(); const u = jogador.userData; u.bracoD.rotation.x = -0.3; }
     else { mini.msg = 'Errou o prego! Quase no dedo...'; SOM.grr(); }
-    if (mini.feitos >= mini.precisa) { const l = mini.livre; fechaMini(); if (l) fimLivre(); else etapaConcluida(); return; }
+    if (mini.feitos >= mini.precisa) { const l = mini.livre; venceuMini(mini.tipo); fechaMini(); if (l) fimLivre(); else etapaConcluida(); return; }
     desenhaMini(); return;
   }
   if (mini.tipo === 'serrar') {
     if (!down) return;
     mini.prog = Math.min(1, mini.prog + 0.11); SOM.passo(true, false);
-    if (mini.prog >= 1) { mini.feitos++; mini.prog = 0; mini.msg = 'Tábua cortada! 🪵'; SOM.coleta(); if (mini.feitos >= mini.precisa) { const l = mini.livre; fechaMini(); if (l) fimLivre(); else etapaConcluida(); return; } }
+    if (mini.prog >= 1) { mini.feitos++; mini.prog = 0; mini.msg = 'Tábua cortada! 🪵'; SOM.coleta(); if (mini.feitos >= mini.precisa) { const l = mini.livre; venceuMini(mini.tipo); fechaMini(); if (l) fimLivre(); else etapaConcluida(); return; } }
     desenhaMini(); return;
   }
   if (mini.tipo === 'amarrar') return;
@@ -2796,7 +2866,7 @@ function miniTecla(down) {
     if (ok) { mini.acertos++; mini.msg = ['Boa!', 'Isso!', 'Mais uma!', 'Quase lá!'][Math.min(3, mini.acertos - 1)]; SOM.coleta(); }
     else { mini.msg = 'Escorregou a corda! Tenta de novo no verde.'; SOM.grr(); }
     if (!mini.livre) bandeiraAlvo = 1.2 + (5.4 - 1.2) * (mini.acertos / mini.precisa);   // o minijogo do menu não mexe no mastro da história
-    if (mini.acertos >= mini.precisa) { const l = mini.livre; fechaMini(); if (!l) bandeiraAlvo = 5.4; SOM.uivo(); if (l) fimLivre(); else { aviso('🐺 Alcateia: "Melhor possível!" — a bandeira sobe na árvore do lobinhos.com.', 4000); if (!Missoes.minigame('bandeira').length) completa('bandeira'); } }
+    if (mini.acertos >= mini.precisa) { const l = mini.livre; venceuMini(mini.tipo); fechaMini(); if (!l) bandeiraAlvo = 5.4; SOM.uivo(); if (l) fimLivre(); else { aviso('🐺 Alcateia: "Melhor possível!" — a bandeira sobe na árvore do lobinhos.com.', 4000); if (!Missoes.minigame('bandeira').length) completa('bandeira'); } }
     else desenhaMini();
   } else {
     if (down) { mini.segurando = true; }
@@ -2807,7 +2877,7 @@ function miniTecla(down) {
       else if (c >= 0.82) { mini.faiscas = 0; mini.msg = 'Forte demais! Espalhou a lenha, começa de novo.'; SOM.grr(); }
       else { mini.msg = 'Fraco demais, não saiu faísca.'; }
       mini.carga = 0;
-      if (mini.faiscas >= mini.precisa) { const l = mini.livre; fechaMini(); SOM.faisca(); if (l) fimLivre(); else { sede.chamas.visible = true; aviso('🔥 A fogueira do conselho está acesa!', 3500); if (!Missoes.minigame('fogo').length) completa('fogueira'); } }
+      if (mini.faiscas >= mini.precisa) { const l = mini.livre; venceuMini(mini.tipo); fechaMini(); SOM.faisca(); if (l) fimLivre(); else { sede.chamas.visible = true; aviso('🔥 A fogueira do conselho está acesa!', 3500); if (!Missoes.minigame('fogo').length) completa('fogueira'); } }
       else desenhaMini();
     }
   }
@@ -2832,7 +2902,7 @@ function atualizaMini(dt) {
       if (mini.progresso >= 1) {
         let r = Math.random(), nome = 'lambari'; for (const [n, pr] of PEIXES) { if (r < pr) { nome = n; break; } r -= pr; }
         mini.peixes++; peixesTotal++; mini.fase = 'lancar'; mini.msg = 'Pegou um ' + nome + '! 🐟'; boia.visible = false; SOM.coleta(); aviso('🐟 Pegou um ' + nome + '! (total: ' + peixesTotal + ')', 2500);
-        if (mini.peixes >= mini.precisa) { const l = mini.livre; fechaMini(); vara.visible = false; aviso('🎣 ' + mini.precisa + ' peixes! Pescador da alcateia.', 4000); SOM.missao(); if (l) fimLivre(); return; }
+        if (mini.peixes >= mini.precisa) { const l = mini.livre; venceuMini(mini.tipo); fechaMini(); vara.visible = false; aviso('🎣 ' + mini.precisa + ' peixes! Pescador da alcateia.', 4000); SOM.missao(); if (l) fimLivre(); return; }
       }
     } else boia.visible = false;
   } else if (mini.tipo === 'bocha') {
@@ -2990,6 +3060,7 @@ function desenhaMinimapa() {
   mctx.save(); mctx.translate(px, py); mctx.rotate(-estado.yaw + Math.PI / 2);
   mctx.fillStyle = '#ffd54a'; mctx.beginPath(); mctx.moveTo(6, 0); mctx.lineTo(-4, -4); mctx.lineTo(-4, 4); mctx.closePath(); mctx.fill(); mctx.restore();
   for (const j of jogadores) if (j.mesh) { const [a, b] = mmTx(j.pos.x, -j.pos.z); mctx.fillStyle = j.cor; mctx.beginPath(); mctx.arc(a, b, 3, 0, 6.3); mctx.fill(); }
+  if (typeof onlineMinimapa === 'function') onlineMinimapa();
   // lenha que ainda dá pra pegar (só existe enquanto a missão está ativa)
   mctx.fillStyle = '#ff5d5d';
   for (const i of interativos) if (i.r > 0 && /Lenha/i.test(i.nome) && (!i.cond || i.cond())) { const [a, b] = mmTx(i.x, -i.z); mctx.beginPath(); mctx.arc(a, b, 2.5, 0, 6.3); mctx.fill(); }
@@ -3046,17 +3117,23 @@ const pausaEl = document.getElementById('pausa');
 const pausado = () => pausaEl.style.display === 'flex';
 // o navegador recusa o pointer lock por ~1 s depois do Esc; aí o clique no "Pausado" caía no vazio
 let destravouEm = -1e9;
+// celular/tablet (toque.js): não existe trava de mouse; "travar" só entra no jogo e o botão ⏸ pausa
+const TOQUE = { ativo: /[?&]toque\b/.test(location.search) || (typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches && !/[?&]semtoque\b/.test(location.search)), mx: 0, mz: 0, correr: false };
+let viaControle = false;   // o clique veio do botão A do controle: não dá pra prender o mouse (o navegador só deixa com clique de verdade)
+function comecaPeloControle(el) { viaControle = true; try { (el || inicio.querySelector('.btn:not(#btnContinuar)')).click(); } finally { viaControle = false; } }
 function travar() {
+  if (TOQUE.ativo || viaControle) { mudouTrava(true); return; }
   const falta = 1100 - (performance.now() - destravouEm);
   if (falta > 0) { setTimeout(travar, falta); return; }
   try { const p = renderer.domElement.requestPointerLock(); if (p && p.catch) p.catch(() => aviso('Clique de novo para continuar', 1500)); } catch (e) {}
 }
 document.addEventListener('pointerlockerror', () => { if (jogoIniciado) aviso('Clique de novo para continuar', 1500); });
 pausaEl.addEventListener('click', travar);
-inicio.querySelector('.btn').addEventListener('click', travar);   // só o botão começa: clicar no resto do menu prendia o mouse
+inicio.querySelector('.btn:not(#btnContinuar)').addEventListener('click', travar);   // só o botão começa: clicar no resto do menu prendia o mouse
 renderer.domElement.addEventListener('click', () => { if (!travado && (jogoIniciado || DEBUG)) travar(); });
-document.addEventListener('pointerlockchange', () => {
-  travado = document.pointerLockElement === renderer.domElement;
+document.addEventListener('pointerlockchange', () => { if (!TOQUE.ativo) mudouTrava(document.pointerLockElement === renderer.domElement); });
+function mudouTrava(t) {
+  travado = t;
   if (!travado) { destravouEm = performance.now(); soltaTudo(); }
   if (travado) jogoIniciado = true;
   if (travado) { SOM.menu(false); SOM.ambiente(true); pausaEl.style.display = 'none'; }
@@ -3064,7 +3141,7 @@ document.addEventListener('pointerlockchange', () => {
   else { SOM.ambiente(false); SOM.menu(true); }
   if (travado && !introFeita) { if (capituloEscolhido >= 2) iniciaCapitulo(); else iniciaIntro(); }
   inicio.style.display = (travado || DEBUG || jogoIniciado) ? 'none' : 'flex';
-});
+}
 addEventListener('mousemove', e => {
   if (!travado) return;
   cam.yaw -= e.movementX * 0.0025;
@@ -3254,10 +3331,21 @@ function animar() {
   for (const j of jogadores.slice()) atualizaExtra(j, dt);
   // controle do jogador 1 (opcional, junto com o teclado)
   padJ1 = p1Pad !== null ? lerPad(p1Pad) : null;
+  const menuAberto = padJ1 && inicio.style.display !== 'none';
+  if (menuAberto) { if (typeof menuControle === 'function') menuControle(padJ1); padJ1 = null; }   // no menu o controle só navega (extras.js)
+  else if (padJ1 && padJ1.start && jogoIniciado) {   // Start pausa / continua
+    if (pausado()) pausaEl.style.display = 'none';
+    else if (document.pointerLockElement) document.exitPointerLock();   // o pointerlockchange mostra o "Pausado"
+    else { soltaTudo(); pausaEl.style.display = 'flex'; }
+  }
+  if (padJ1 && pausado()) { if (padJ1.a) pausaEl.style.display = 'none'; padJ1 = null; }
   if (padJ1) {
     cam.yaw -= padJ1.cx * 2.2 * dt; cam.pitch = Math.max(-0.2, Math.min(1.2, cam.pitch + padJ1.cy * 1.6 * dt));
     if (cena && cena.historia && padJ1.interagir) proximaFala();
-    if (mini) { const gp = navigator.getGamepads()[p1Pad]; const xDown = !!(gp && gp.buttons[2] && gp.buttons[2].pressed); if (xDown && !mini.padX) miniTecla(true); if (!xDown && mini.padX) miniTecla(false); mini.padX = xDown;
+    if (cena && !cena.historia && !cena.intro && typeof cap2PadExtra === 'function') {   // capítulos 2-4: falas (X ou A), gavião, remo, pipa, quiz
+      if (cena.falas && (padJ1.interagir || padJ1.a)) c2ProximaFala(); else cap2PadExtra(null, padJ1);
+    }
+    if (mini) { const xDown = padJ1.segurandoX; if (xDown && !mini.padX) miniTecla(true); if (!xDown && mini.padX) miniTecla(false); mini.padX = xDown;
       if (padJ1.emote) miniSeta({ feliz: 'ArrowUp', triste: 'ArrowDown', bravo: 'ArrowLeft', surpreso: 'ArrowRight' }[padJ1.emote]); }
     else if (padJ1.interagir) interagir();
     if (padJ1.habilidade) usaHabilidade({ id: personagemId, pos: estado.pos, mesh: jogador, p1: true });
@@ -3272,6 +3360,7 @@ function animar() {
   if (teclas.KeyA || teclas.ArrowLeft) mx -= 1;
   if (teclas.KeyD || teclas.ArrowRight) mx += 1;
   if (padJ1) { mx += padJ1.mx; mz += padJ1.mz; }
+  if (TOQUE.mx || TOQUE.mz) { mx += TOQUE.mx; mz += TOQUE.mz; }
   // gatilhos da fuga do Phantom
   if (!cena && !mini && alissonFalou) {
     const dTree = Math.hypot(estado.pos.x - ARV_BAND[0], estado.pos.z + ARV_BAND[1]);
@@ -3283,9 +3372,9 @@ function animar() {
   if (cena) atualizaCena(dt);
   if (typeof atualizaCap2 === 'function') atualizaCap2(dt);   // capítulo 2 (cap2.js carrega depois deste arquivo)
   atualizaMini(dt); atualizaBolas(dt);
-  const movendo = !!(mx || mz) && (travado || DEBUG || padJ1) && !estado.escalando && !estado.macrame && !cena && !(jogador.userData.batucando > tempo) && !escolhendoDestino && !mini;
+  const movendo = !!(mx || mz) && (travado || DEBUG || padJ1 || TOQUE.ativo) && !estado.escalando && !estado.macrame && !cena && !(jogador.userData.batucando > tempo) && !escolhendoDestino && !mini;
   const nadando = naAguaRasa(estado.pos.x, estado.pos.z) && !emTerra(estado.pos.x, estado.pos.z);
-  const vel = (nadando ? 2.2 : (teclas.ShiftLeft || teclas.ShiftRight || (padJ1 && padJ1.correr)) ? 8.5 : 4.5) * (jogador.userData.turboAte > tempo ? 2 : 1) * MOD.vel;
+  const vel = (nadando ? 2.2 : (teclas.ShiftLeft || teclas.ShiftRight || TOQUE.correr || (padJ1 && padJ1.correr)) ? 8.5 : 4.5) * (jogador.userData.turboAte > tempo ? 2 : 1) * MOD.vel;
   if (movendo) {
     const l = Math.hypot(mx, mz); mx /= l; mz /= l;
     const fx = Math.sin(cam.yaw), fz = Math.cos(cam.yaw);
@@ -3295,9 +3384,9 @@ function animar() {
     estado.yaw += d * Math.min(1, dt * 12);
     // cada passo empurra o jogador pra frente: a velocidade pulsa com o ciclo das pernas
     const impulso = nadando ? 1 : 0.93 + 0.14 * Math.abs(Math.sin(estado.fase));
-    andaEmPassos(estado.pos, dx * vel * impulso * dt, dz * vel * impulso * dt, !cena);
+    andaEmPassos(estado.pos, dx * vel * impulso * dt, dz * vel * impulso * dt, !cena && !MOD.atravessa);
   }
-  if (!cena) resolveColisoes(estado.pos);
+  if (!cena && !MOD.atravessa) resolveColisoes(estado.pos);   // mod Atravessar paredes: sem colisão
   // segurança: se acabar fora de terra (sem estar nadando/escalando/na ponte), volta pro ponto de terra mais próximo
   if (!cena && !estado.escalando && !estado.macrame && !estado.poleiro && !naAguaRasa(estado.pos.x, estado.pos.z) && !emTerra(estado.pos.x, estado.pos.z)) {
     const [sx, sy] = pontoEmTerra(estado.pos.x, -estado.pos.z); estado.pos.set(sx, altO(sx, sy), -sy); estado.vy = 0;
@@ -3328,6 +3417,7 @@ function animar() {
   } else {
     // pulo
     if ((teclas.Space || (padJ1 && padJ1.pular)) && estado.noChao && !nadando) { estado.vy = 6 * MOD.pulo; estado.noChao = false; SOM.pulo(); }
+    else if (MOD.voa && (teclas.Space || (padJ1 && padJ1.pular)) && !nadando) { estado.vy = Math.max(estado.vy, 5 * Math.max(1, MOD.escala)); estado.noChao = false; }   // mod Voar: segurar Espaço sobe
     const pb = sobrePonte(estado.pos.x, estado.pos.z);
     const pol = estado.poleiro && Math.hypot(estado.pos.x - estado.poleiro.x, estado.pos.z - estado.poleiro.z) < estado.poleiro.r && estado.pos.y > estado.poleiro.h - 1.5 ? estado.poleiro.h : null;
     const chao = pol !== null ? pol : pb ? pb.alt : nadando ? -0.9 : (naPlataforma() ? ARV_TOPO : alt(estado.pos.x, estado.pos.z));
@@ -3338,6 +3428,9 @@ function animar() {
   }
   jogador.position.copy(estado.pos); jogador.rotation.y = estado.yaw;
   if (typeof atualizaMods === 'function') atualizaMods(dt);
+  if (typeof atualizaExtras === 'function') atualizaExtras(dt);
+  if (typeof atualizaGrama === 'function') atualizaGrama();
+  if (typeof atualizaOnline === 'function') atualizaOnline(dt);   // amigos de outros computadores (online.js)   // fios de grama deitam embaixo de quem passa (grama.js)   // distintivos no uniforme e dicas (extras.js)
   if (movendo && estado.noChao && !nadando) jogador.position.y += Math.abs(Math.sin(estado.fase)) * 0.03; // balanço suave do passo
 
   // animação de pernas/braços
@@ -3378,7 +3471,8 @@ function animar() {
   if (estado.noChao && u.noArAntes && !nadando) u.estica = 0.84;   // pousou: amassa
   u.noArAntes = noAr;
   u.estica = (u.estica || 1) + ((noAr && estado.vy > 0 ? 1.08 : 1) - (u.estica || 1)) * Math.min(1, dt * 10);
-  { const esc = (u.escala || 1) * MOD.escala, lado = 1 + (1 - u.estica) * 0.5; jogador.scale.set(esc * lado, esc * u.estica, esc * lado); }
+  { const esc = (u.escala || 1) * MOD.escala, lado = 1 + (1 - u.estica) * 0.5; jogador.scale.set(esc * lado * MOD.gordo, esc * u.estica * MOD.alto, esc * lado * MOD.gordo); }
+  if (u.cabecaG) { const ky = MOD.cabeca / MOD.alto; u.cabecaG.scale.set(MOD.cabeca / MOD.gordo, ky, MOD.cabeca / MOD.gordo); u.cabecaG.position.y = 1.45 * (1 - ky); }   // desfaz o esticão do corpo e aplica só o tamanho da cabeça (cresce a partir do pescoço)
   balancaLenco(u, estado.velAnim / 14, dt);
 
   // câmera
@@ -3386,23 +3480,26 @@ function animar() {
   // em piso elevado (plataforma da árvore, copa, ponte) a câmera olhando de baixo mostrava o fundo do piso
   const elevado = naPlataforma() || !!estado.poleiro || !!sobrePonte(estado.pos.x, estado.pos.z);
   if (elevado) cam.pitch = Math.max(cam.pitch, 0.02);
-  const alvoCam = estado.pos.clone().add(new THREE.Vector3(0, 1.5, 0));
-  const off = new THREE.Vector3(Math.sin(cam.yaw) * Math.cos(cam.pitch), Math.sin(cam.pitch), Math.cos(cam.yaw) * Math.cos(cam.pitch)).multiplyScalar(cam.dist);
+  // jogador gigante ou minúsculo (mod "Tamanho", de 1/15 a 20×): a câmera afasta/aproxima e mira na mesma altura do corpo
+  const kCam = MOD.escala * Math.max(1, (MOD.alto + MOD.gordo + MOD.cabeca * 0.5) / 2.5), dCam = cam.dist * kCam;
+  const perto = kCam < 1 ? 0.01 : 0.1; if (camera.near !== perto) { camera.near = perto; camera.updateProjectionMatrix(); }
+  const alvoCam = estado.pos.clone().add(new THREE.Vector3(0, 1.5 * MOD.escala * MOD.alto, 0));
+  const off = new THREE.Vector3(Math.sin(cam.yaw) * Math.cos(cam.pitch), Math.sin(cam.pitch), Math.cos(cam.yaw) * Math.cos(cam.pitch)).multiplyScalar(dCam);
   // câmera não atravessa troncos/paredes: encurta a distância se algo estiver no caminho
-  let distCam = cam.dist;
+  let distCam = dCam;
   for (const o of obstaculos) {
     if (o.r === undefined || o.r <= 0 || Math.abs(o.x - alvoCam.x) > 16 || Math.abs(o.z - alvoCam.z) > 16) continue;
-    const dx = off.x / cam.dist, dz = off.z / cam.dist, hl = Math.hypot(dx, dz);
+    const dx = off.x / dCam, dz = off.z / dCam, hl = Math.hypot(dx, dz);
     if (hl < 1e-3) continue;
     const t = ((o.x - alvoCam.x) * dx + (o.z - alvoCam.z) * dz) / (hl * hl);
-    if (t <= 0 || t > cam.dist) continue;
+    if (t <= 0 || t > dCam) continue;
     const cx = alvoCam.x + dx * t, cz = alvoCam.z + dz * t;
-    if (Math.hypot(cx - o.x, cz - o.z) < o.r + 0.35) distCam = Math.min(distCam, Math.max(0.9, t - o.r - 0.6));
+    if (Math.hypot(cx - o.x, cz - o.z) < o.r + 0.35) distCam = Math.min(distCam, Math.max(0.9 * kCam, t - o.r - 0.6));
   }
   // paredes (caixas): anda pelo segmento e para antes de entrar numa construção
-  for (let t = 0.5; t < distCam; t += 0.25) {   // começava em 1 m: encostado na parede a câmera já nascia do outro lado
-    const px = alvoCam.x + off.x / cam.dist * t, pz = alvoCam.z + off.z / cam.dist * t, py = alvoCam.y + off.y / cam.dist * t;
-    if (py > 6) break;
+  for (let t = 0.5 * Math.min(1, kCam); t < distCam; t += 0.25 * Math.min(1, kCam)) {   // começava em 1 m: encostado na parede a câmera já nascia do outro lado
+    const px = alvoCam.x + off.x / dCam * t, pz = alvoCam.z + off.z / dCam * t, py = alvoCam.y + off.y / dCam * t;
+    if (py > 6 * Math.max(1, kCam)) break;
     let dentro = false;
     for (const o of obstaculos) {
       if (o.r !== undefined || Math.abs(o.x - px) > 20 || Math.abs(o.z - pz) > 20 || o.hw < 1.5) continue;
@@ -3411,10 +3508,10 @@ function animar() {
       const lx = dx * c - dz * sn, lz = dx * sn + dz * c;
       if (Math.abs(lx) < o.hw + 0.3 && Math.abs(lz) < o.hd + 0.3) { dentro = true; break; }
     }
-    if (dentro) { distCam = Math.max(0.9, t - 0.4); break; }
+    if (dentro) { distCam = Math.max(0.9 * kCam, t - 0.4); break; }
   }
-  const posCam = alvoCam.clone().add(off.clone().multiplyScalar(distCam / cam.dist));
-  const chaoCam = p => { let ac = alt(p.x, p.z) + 0.6; if (elevado) ac = Math.max(ac, estado.pos.y + 0.4); if (p.y < ac) p.y = ac; };
+  const posCam = alvoCam.clone().add(off.clone().multiplyScalar(distCam / dCam));
+  const chaoCam = p => { let ac = alt(p.x, p.z) + 0.6 * Math.min(1, kCam); if (elevado) ac = Math.max(ac, estado.pos.y + 0.4); if (p.y < ac) p.y = ac; };
   chaoCam(posCam);
   // aproxima na hora (senão passa uns quadros dentro da parede) e afasta suave
   const encurtou = posCam.distanceTo(alvoCam) < camera.position.distanceTo(alvoCam) - 0.05;

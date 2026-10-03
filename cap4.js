@@ -28,23 +28,7 @@ const LIGA_QUIZ = [
   ['Qual Pokémon evolui para Pikachu?', ['Raichu', 'Plusle', 'Pichu', 'Nenhum, Pikachu não evolui'], 2],
   ['Quem é o Pokémon falante da Equipe Rocket?', ['Persian', 'Meowth', 'Wobbuffet', 'Ekans'], 1],
 ];
-const C4_MISSOES = [
-  ['c4_akela', 'Sábado do Distrital! Falar com a Akelá na árvore do lobinhos.com'],
-  ['c4_onibus', 'Receber o ônibus das alcateias visitantes na portaria'],
-  ['c4_abertura', 'Abertura do Distrital: falar com o Chefe Diego na árvore do lobinhos.com'],
-  ['c4_gym_pedra', '🪨 Ginásio de Pedra (molhe): desafio + quiz do líder'],
-  ['c4_gym_cascata', '💧 Ginásio da Cascata (Praia do Camping): desafio + quiz do líder'],
-  ['c4_gym_trovao', '⚡ Ginásio do Trovão (Campo do Camping): desafio + quiz do líder'],
-  ['c4_gym_arcoiris', '🌈 Ginásio do Arco-íris (mata, atrás da cancha de bocha): desafio + quiz do líder'],
-  ['c4_gym_alma', '☠️ Ginásio da Alma (cancha de bocha): desafio + quiz do líder'],
-  ['c4_gym_lama', '🔮 Ginásio da Lama (playground): desafio + quiz do líder'],
-  ['c4_gym_vulcao', '🔥 Ginásio do Vulcão (Fogueira do Conselho): desafio + quiz do líder'],
-  ['c4_gym_terra', '🌎 Ginásio da Terra (frente da sede): desafio + quiz do líder'],
-  ['c4_liga', 'Liga do Distrital: com as 8 insígnias, o quiz final com a Akelá'],
-  ['c4_foto', 'Foto oficial do Distrital na árvore do lobinhos.com'],
-  ['c4_despedida', 'Despedir as alcateias visitantes no ônibus, na portaria'],
-];
-function c4Missao(id) { const m = C4_MISSOES.find(x => x[0] === id); if (m && !missoes.find(x => x.id === id)) { missoes.push({ id, txt: m[1], ok: false }); renderMissoes(); } }
+// missões: dados/cap4_missoes.js (texto e grafo; ginásio = 'c4_gym_' + id); aqui só Missoes.da / conclui no ponto certo da história
 
 // painel de insígnias
 const insigniasEl = Object.assign(document.body.appendChild(document.createElement('div')), { id: 'insignias' });
@@ -100,16 +84,15 @@ function iniciaCap4() {
   // lobinho visitante pra trocar lenço, perto da árvore
   if (!CAP4.visitante) { CAP4.visitante = lobinhoVisitante(ARV_BAND[0] + 9, ARV_BAND[1] + 6, 3.6, 'Lobinho Visitante', 0xe0402a, { cabelo: new THREE.MeshLambertMaterial({ color: 0x8a4a1a }), estiloCabelo: 'cacheado' }); interativos.find(i => i.npcMesh === CAP4.visitante).acao = () => aviso('Lobinho Visitante: "Oi! Eu sou do outro grupo do distrito. Que camping legal o de vocês!"', 3500); }
   CAP4.visitante.visible = false; for (const o of obstaculos) if (o.npc === CAP4.visitante) o.r = 0; for (const i of interativos) if (i.npcMesh === CAP4.visitante) i.r = 0;
-  missoes.splice(0, missoes.length); c4Missao('c4_akela'); desenhaInsignias();
+  Missoes.carrega(DADOS.cap4Missoes); missoesSemAviso(() => Missoes.da('c4_akela')); desenhaInsignias();
   cena = { cap2: true, cap4: true, tipo: 'abre', t: 0 };
   textoNoite.textContent = 'Sábado do Distrital — tema: Pokémon'; textoNoite.style.opacity = 1;
   if (CAP4.continuar === 'pedra') retomaCap4Molhe();
 }
-// save "molhe": Distrital já aberto, ônibus chegou, nenhuma insígnia ainda; começa no molhe com o Chefe Diego (sem botão no menu:
-// abre com index.html?continuar=pedra, ou fica guardado no navegador e o cap. 4 continua daí)
+// save "molhe": Distrital já aberto, ônibus chegou, nenhuma insígnia ainda; começa no molhe com o Chefe Diego (só pelo debug:
+// index.html?continuar=pedra — o cap. 4 não tem "Continuar" no menu)
 function retomaCap4Molhe() {
-  const ok = ids => { for (const id of ids) { c4Missao(id); const m = missoes.find(x => x.id === id); if (m) m.ok = true; } };
-  missoes.splice(0, missoes.length); ok(['c4_akela', 'c4_onibus', 'c4_abertura']); c4Missao('c4_gym_pedra');
+  missoesSemAviso(() => Missoes.avancaAte('c4_gym_pedra'));
   personalizacao[personagemId].boneEstilo = 'ash'; escolhePersonagem(personagemId);
   const pc = CARRO_CAMINHO[CARRO_CAMINHO.length - 1]; CAP4.onibus.visible = true; CAP4.onibus.position.set(pc[0] - 6, altO(pc[0] - 6, pc[1]), -pc[1]);
   for (const g of GINASIOS) { const m = CAP4.lideres[g.id]; m.visible = true; m.position.set(g.x, altO(g.x, g.y), -g.y); for (const o of obstaculos) if (o.npc === m) { o.x = g.x; o.z = -g.y; o.r = 0.5; } for (const i of interativos) if (i.npcMesh === m) { i.x = g.x; i.z = -g.y; i.r = 3; } }
@@ -119,10 +102,9 @@ function retomaCap4Molhe() {
   textoNoite.textContent = 'Continuando: no molhe, antes da primeira insígnia';
   if (cena) cena.t = 1.5;
   setTimeout(() => aviso('Chefe Diego: "Chegou, ' + PERSONAGENS[personagemId].nome + '! Ginásio de Pedra: o desafio são 3 pedras redondas aqui no molhe. Aperte E em mim pra começar."', 6000), 3500);
-  try { localStorage.setItem('escoteiros.save', JSON.stringify({ cap: 4, ponto: 'pedra', personagem: personagemId, quando: Date.now() })); } catch (e) {}
 }
-// ?continuar=pedra na URL (ou save guardado) → escolher o cap. 4 no menu já começa no molhe
-{ const c = qs.get('continuar') || ((leSave() || {}).cap === 4 ? (leSave() || {}).ponto : null); if (c === 'pedra') { CAP4.continuar = 'pedra'; if (qs.has('continuar')) { capituloEscolhido = 4; document.querySelectorAll('#inicio .cap').forEach(x => x.classList.toggle('sel', x.dataset.cap === '4')); } } }
+// ?continuar=pedra na URL → escolher o cap. 4 no menu já começa no molhe (o cap. 4 não tem "Continuar" no menu)
+{ const c = qs.get('continuar'); if (c === 'pedra') { CAP4.continuar = 'pedra'; if (qs.has('continuar')) { capituloEscolhido = 4; document.querySelectorAll('#inicio .cap').forEach(x => x.classList.toggle('sel', x.dataset.cap === '4')); } } }
 
 // ---------- diálogos ----------
 function c4Akela() {
@@ -130,7 +112,7 @@ function c4Akela() {
   if (f === 'abre' || f === 'akela') {
     aviso('Akelá: "' + PERSONAGENS[personagemId].nome + '! Hoje é o DISTRITAL: as alcateias de todo o distrito vêm pro nosso camping, e o tema é POKÉMON! Toma, o boné do Ash pra ti. Agora vai pra portaria receber o ônibus."', 7000);
     personalizacao[personagemId].boneEstilo = 'ash'; escolhePersonagem(personagemId); SOM.coleta();
-    completa('c4_akela'); CAP4.fase = 'onibus'; c4Missao('c4_onibus');
+    Missoes.falou('Akelá'); CAP4.fase = 'onibus'; Missoes.da('c4_onibus');
   }
   else if (f === 'onibus') aviso('Akelá: "Ficou igualzinho ao Ash! Agora vai pra portaria receber o ônibus."', 4000);
   else if (f === 'abertura') aviso('Akelá: "Fala com o Chefe Diego, ele vai abrir o Distrital e explicar os ginásios."', 4000);
@@ -150,7 +132,7 @@ function c4Diego() {
       'Chefe Diego: "São 8 GINÁSIOS espalhados pelo camping, na ordem de Kanto: Pedra, Cascata, Trovão, Arco-íris, Alma, Lama, Vulcão e Terra. Um abre depois do outro."',
       'Chefe Diego: "Em cada um, um desafio escoteiro pra chegar no líder. O líder faz uma pergunta de Pokémon: acertou, ganha a insígnia. Com as 8, a Liga com a Akelá!"',
       'Chefe Diego: "O primeiro é o Ginásio de Pedra, lá no molhe... e o líder sou EU. Te espero lá! Melhor possível! Distrital ABERTO!"',
-    ], aoTerminar: () => { cena = null; completa('c4_abertura'); CAP4.fase = 'ginasios'; c4Missao('c4_gym_pedra'); desenhaInsignias(); SOM.uivo();
+    ], aoTerminar: () => { cena = null; Missoes.falou('Chefe Diego'); CAP4.fase = 'ginasios'; Missoes.da('c4_gym_pedra'); desenhaInsignias(); SOM.uivo();
       const g = GINASIOS[0]; chefe.position.set(g.x, altO(g.x, g.y), -g.y); chefe.rotation.y = 2.6; for (const o of obstaculos) if (o.npc === chefe) { o.x = g.x; o.z = -g.y; } for (const i of interativos) if (i.npcMesh === chefe) { i.x = g.x; i.z = -g.y; }
       aviso('🐺 Alcateias: "AUUUUU!" — primeiro ginásio: Pedra, no molhe, com o próprio Chefe Diego de líder. Siga o 🪨!', 5000); } };
     c2ProximaFala();
@@ -224,14 +206,14 @@ function respondeQuiz() {
     if (cena.i < cena.perguntas.length) { cena.sel = 0; aviso(quem + ': "Certo! Próxima..."', 2000); desenhaQuiz(); return; }
     destinosEl.style.display = 'none'; const id = cena.id; cena = null;
     if (g) {
-      CAP4.insignias[id] = true; CAP4.desafio = null; desenhaInsignias(); completa('c4_gym_' + id); SOM.missao();
+      CAP4.insignias[id] = true; CAP4.desafio = null; desenhaInsignias(); Missoes.conclui('c4_gym_' + id); SOM.missao();
       const m = CAP4.lideres[id]; if (m.userData.marca) m.userData.marca.visible = false;
       const prox = GINASIOS[GINASIOS.indexOf(g) + 1];
-      if (prox) c4Missao('c4_gym_' + prox.id); else c4Missao('c4_liga');
+      Missoes.da(prox ? 'c4_gym_' + prox.id : 'c4_liga');
       aviso(quem + ': "ACERTOU! Aqui está a ' + g.insignia + ' ' + g.emoji + '!"' + (prox ? ' Próximo: ' + prox.nome + ' ' + prox.emoji + ', ' + prox.lugar + '.' : ' — 8 insígnias! Vai pra árvore do lobinhos.com enfrentar a Liga com a Akelá!'), 6500);
       if (id === 'lama') { phantom.mesh.position.set(ARV_BAND[0] + 5.4, ARV_BASE - 0.12, -ARV_BAND[1] + 1.2); phantom.mesh.rotation.set(-0.5, 2.6, 0); phantom.estagio = 4; phantom.seguindo = false; }
     } else {
-      completa('c4_liga'); CAP4.fase = 'foto'; c4Missao('c4_foto'); SOM.fim();
+      Missoes.conclui('c4_liga'); CAP4.fase = 'foto'; Missoes.da('c4_foto'); SOM.fim();
       aviso('Akelá: "CAMPEÃ(O) DO DISTRITAL! 🏆 As 8 insígnias e a Liga! Agora a foto oficial, aqui na árvore: aperte E em \'Tirar a foto oficial\'."', 7000);
     }
   } else {
@@ -285,7 +267,7 @@ function atualizaOnibus(dt) {
       CAP4.visitante.visible = true; for (const o of obstaculos) if (o.npc === CAP4.visitante) o.r = 0.5; for (const i of interativos) if (i.npcMesh === CAP4.visitante) i.r = 3;
       aviso('🚌 Chegaram! Alcateias de todo o distrito, com lenços de todas as cores. Os líderes já foram pros ginásios.', 5000);
     } else if (cena.t > 4) {
-      cena = null; completa('c4_onibus'); CAP4.fase = 'abertura'; c4Missao('c4_abertura');
+      cena = null; Missoes.conclui('c4_onibus'); CAP4.fase = 'abertura'; Missoes.da('c4_abertura');
       // o Chefe Diego vai pra árvore do lobinhos.com abrir o Distrital
       const cx = ARV_BAND[0] + 8, cy = ARV_BAND[1] - 6; chefe.position.set(cx, altO(cx, cy), -cy); chefe.rotation.y = -1.0;
       for (const o of obstaculos) if (o.npc === chefe) { o.x = cx; o.z = -cy; } for (const i of interativos) if (i.npcMesh === chefe) { i.x = cx; i.z = -cy; }
@@ -297,7 +279,7 @@ function atualizaOnibus(dt) {
       const alvo = c[cena.idx - 1], dx = alvo[0] - b.position.x, dz = -alvo[1] - b.position.z, d = Math.hypot(dx, dz), passo = 7 * dt;
       if (d <= passo) { b.position.set(alvo[0], 0, -alvo[1]); cena.idx--; } else { b.position.x += dx / d * passo; b.position.z += dz / d * passo; }
       b.position.y = alt(b.position.x, b.position.z); b.rotation.y = Math.atan2(dx, dz) - Math.PI / 2;
-    } else { b.visible = false; SOM.motor(false); cena = null; completa('c4_despedida'); CAP4.fase = 'fim'; SOM.uivo(); setTimeout(() => { aviso('🏕️ FIM DO CAPÍTULO 4 — obrigado por jogar! O Distrital Pokémon: 8 ginásios, 8 insígnias, a Liga e a foto. Até o próximo sábado! 🐺', 12000); SOM.fim(); }, 1500); }
+    } else { b.visible = false; SOM.motor(false); cena = null; Missoes.conclui('c4_despedida'); CAP4.fase = 'fim'; SOM.uivo(); setTimeout(() => { aviso('🏕️ FIM DO CAPÍTULO 4 — obrigado por jogar! O Distrital Pokémon: 8 ginásios, 8 insígnias, a Liga e a foto. Até o próximo sábado! 🐺', 12000); SOM.fim(); }, 1500); }
   }
 }
 function iniciaFoto() {
@@ -312,7 +294,7 @@ function iniciaFoto() {
 function atualizaFoto(dt) {
   cena.t += dt;
   if (cena.t > 3 && !cena.flash) { cena.flash = true; fadeEl.style.background = '#fff'; fadeEl.style.transition = 'opacity .05s'; fadeEl.style.opacity = 1; SOM.pop(); setTimeout(() => { fadeEl.style.opacity = 0; setTimeout(() => { fadeEl.style.background = '#000'; fadeEl.style.transition = 'opacity .7s'; }, 300); }, 120); aviso('📸 Alcateias: "POKÉMOOON!"', 3000); }
-  if (cena.t > 5.5) { cena = null; completa('c4_foto'); CAP4.fase = 'despedida'; c4Missao('c4_despedida'); aviso('Akelá: "Ficou linda! Agora o ônibus vai embora, vai lá na portaria dar tchau."', 4500); }
+  if (cena.t > 5.5) { cena = null; Missoes.conclui('c4_foto'); CAP4.fase = 'despedida'; Missoes.da('c4_despedida'); aviso('Akelá: "Ficou linda! Agora o ônibus vai embora, vai lá na portaria dar tchau."', 4500); }
 }
 
 // ---------- por frame e câmera ----------
@@ -357,12 +339,12 @@ function atualizaCap4(dt) {
 if (DEBUG && qs.has('cap4')) try {
   capituloEscolhido = 4; iniciaCap4(); cena = null; fadeEl.style.transition = 'none'; fadeEl.style.opacity = 0; textoNoite.style.opacity = 0; document.getElementById('hud').style.opacity = 1; CAP4.fase = 'akela';
   const f = qs.get('cap4');
-  const ok = ids => { for (const id of ids) { c4Missao(id); const m = missoes.find(x => x.id === id); if (m) m.ok = true; } renderMissoes(); };
+  const ate = id => missoesSemAviso(() => Missoes.avancaAte(id));
   const chegou = () => { for (const g of GINASIOS) { const m = CAP4.lideres[g.id]; m.visible = true; m.position.set(g.x, altO(g.x, g.y), -g.y); for (const o of obstaculos) if (o.npc === m) { o.x = g.x; o.z = -g.y; o.r = 0.5; } for (const i of interativos) if (i.npcMesh === m) { i.x = g.x; i.z = -g.y; i.r = 3; } } };
-  if (f === 'ginasios' || GINASIOS.some(g => g.id === f)) { ok(['c4_akela', 'c4_onibus', 'c4_abertura']); chegou(); CAP4.fase = 'ginasios'; const k = Math.max(0, GINASIOS.findIndex(g => g.id === f)); for (let i = 0; i < k; i++) { CAP4.insignias[GINASIOS[i].id] = true; ok(['c4_gym_' + GINASIOS[i].id]); } c4Missao('c4_gym_' + GINASIOS[k].id); estado.pos.set(GINASIOS[k].x + 3, altO(GINASIOS[k].x + 3, GINASIOS[k].y), -GINASIOS[k].y); }
-  if (f === 'liga' || f === 'foto' || f === 'despedida') { ok(['c4_akela', 'c4_onibus', 'c4_abertura'].concat(GINASIOS.map(g => 'c4_gym_' + g.id))); chegou(); for (const g of GINASIOS) CAP4.insignias[g.id] = true; CAP4.fase = 'ginasios'; c4Missao('c4_liga'); }
-  if (f === 'foto' || f === 'despedida') { ok(['c4_liga']); CAP4.fase = 'foto'; c4Missao('c4_foto'); }
-  if (f === 'despedida') { ok(['c4_foto']); CAP4.fase = 'despedida'; c4Missao('c4_despedida'); const pc = CARRO_CAMINHO[CARRO_CAMINHO.length - 1]; CAP4.onibus.visible = true; CAP4.onibus.position.set(pc[0], altO(pc[0], pc[1]), -pc[1]); estado.pos.set(pc[0] + 4, altO(pc[0] + 4, pc[1] + 4), -pc[1] - 4); }
+  if (f === 'ginasios' || GINASIOS.some(g => g.id === f)) { chegou(); CAP4.fase = 'ginasios'; const k = Math.max(0, GINASIOS.findIndex(g => g.id === f)); for (let i = 0; i < k; i++) CAP4.insignias[GINASIOS[i].id] = true; ate('c4_gym_' + GINASIOS[k].id); estado.pos.set(GINASIOS[k].x + 3, altO(GINASIOS[k].x + 3, GINASIOS[k].y), -GINASIOS[k].y); }
+  if (f === 'liga' || f === 'foto' || f === 'despedida') { ate('c4_liga'); chegou(); for (const g of GINASIOS) CAP4.insignias[g.id] = true; CAP4.fase = 'ginasios'; }
+  if (f === 'foto' || f === 'despedida') { ate('c4_foto'); CAP4.fase = 'foto'; }
+  if (f === 'despedida') { ate('c4_despedida'); CAP4.fase = 'despedida'; const pc = CARRO_CAMINHO[CARRO_CAMINHO.length - 1]; CAP4.onibus.visible = true; CAP4.onibus.position.set(pc[0], altO(pc[0], pc[1]), -pc[1]); estado.pos.set(pc[0] + 4, altO(pc[0] + 4, pc[1] + 4), -pc[1] - 4); }
   desenhaInsignias();
   if (qs.get('pos')) { const [x, y] = qs.get('pos').split(',').map(Number); estado.pos.set(x, altO(x, y), -y); }
 } catch (e) { dbg('ERRO cap4 debug: ' + e.message + ' ' + (e.stack || '').split('\n')[0]); }

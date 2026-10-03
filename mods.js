@@ -1,5 +1,5 @@
 // ---------- Mods e mais: baixar/criar mods, skins e DLC (tudo salvo no navegador) ----------
-// Um mod é um JSON: { id, nome, emoji, autor, desc, ajustes:{vel,pulo,grav,escala,ceu,neblina,sol}, placa:{texto,x,y}, codigo }
+// Um mod é um JSON: { id, nome, emoji, autor, desc, ajustes:{vel,pulo,grav,escala,gordo,alto,cabeca,voa,atravessa,ceu,neblina,sol}, placa:{texto,x,y}, codigo }
 const MODS_CATALOGO = [
   { id: 'turbo', nome: 'Turbo Lobinho', emoji: '⚡', autor: 'lobinhos.com', desc: 'Anda e corre 2x mais rápido pelo camping.', ajustes: { vel: 2 } },
   { id: 'lua', nome: 'Gravidade da Lua', emoji: '🌙', autor: 'lobinhos.com', desc: 'Pula altíssimo e cai devagar, como na Lua.', ajustes: { pulo: 1.6, grav: 0.35 } },
@@ -8,6 +8,8 @@ const MODS_CATALOGO = [
   { id: 'porDoSol', nome: 'Pôr do sol na Lagoa', emoji: '🌅', autor: 'Chefe Diego', desc: 'Céu laranja e luz dourada o dia inteiro.', ajustes: { ceu: '#ff9a4a', neblina: '#ffc98a', sol: 0.7 } },
   { id: 'neblina', nome: 'Neblina da manhã', emoji: '🌫️', autor: 'Akelá', desc: 'Neblina densa: só se enxerga a poucos metros.', ajustes: { neblina: '#dfe6ea', nebPerto: 8, nebLonge: 60 } },
   { id: 'placa', nome: 'Placa da alcateia', emoji: '🪧', autor: 'Alisson', desc: 'Uma placa "Alcateia Garibaldi passou aqui!" na praia.', placa: { texto: 'Alcateia Garibaldi passou aqui!', x: 60, y: -40 } },
+  { id: 'cabecao', nome: 'Cabeção', emoji: '🎈', autor: 'Maria', desc: 'Cabeça 3x maior, corpo baixinho e fofo.', ajustes: { cabeca: 3, alto: 0.7, gordo: 1.3 } },
+  { id: 'voador', nome: 'Lobinho Voador', emoji: '🕊️', autor: 'Caio', desc: 'Segure Espaço pra voar por cima das árvores do camping.', ajustes: { voa: true } },
   { id: 'superPulo', nome: 'Super Pulo', emoji: '🦘', autor: 'Caio', desc: 'Pulo 2x mais alto com gravidade normal.', ajustes: { pulo: 2 } },
 ];
 const SKINS_CATALOGO = [
@@ -67,6 +69,16 @@ function dlcCapitulo(n) {   // tarefas geradas de forma determinística pelo nú
 }
 const modsEl = document.getElementById('mods');
 let modsAba = 'baixar';
+// tamanho do jogador nos mods: de 15× menor a 20× maior
+const TAM_MIN = 1 / 15, TAM_MAX = 20;
+// valor de uma régua do criador; a do tamanho é log2 e "gruda" em números redondos (2×, 1/3…) e no 1×
+function valorAjuste(el) {
+  if (!el.dataset.log) return +el.value;
+  const v = Math.pow(2, +el.value), n = v >= 1 ? v : 1 / v, r = Math.round(n);
+  const redondo = Math.abs(n - r) / r < 0.04 ? r : +n.toFixed(2);
+  return v >= 1 ? redondo : 1 / redondo;
+}
+function textoTamanho(v) { return v === 1 ? '1× (normal)' : v > 1 ? (+v.toFixed(2)) + '× maior' : (+(1 / v).toFixed(2)) + '× menor'; }
 const modsSt = { instalados: {}, meus: [], skins: [], dlc: false, dlcOn: true, capsFeitos: {}, bichosVistos: {}, minisFeitos: {} };
 try { Object.assign(modsSt, JSON.parse(localStorage.getItem('escoteiros.mods') || '{}')); } catch (e) {}
 function salvaMods() { try { localStorage.setItem('escoteiros.mods', JSON.stringify(modsSt)); } catch (e) {} }
@@ -78,17 +90,19 @@ function importaArquivo(cb) { const i = document.createElement('input'); i.type 
 const modsPlacas = {};
 const DLC = { bichos: [], cap: null, tarefa: 0, ligado: false, menu: null };
 function aplicaMods() {
-  const a = { vel: 1, pulo: 1, grav: 1, escala: 1, ceu: null, neblina: null, sol: 1, nebPerto: 150, nebLonge: 650 };
+  const a = { vel: 1, pulo: 1, grav: 1, escala: 1, gordo: 1, alto: 1, cabeca: 1, voa: false, atravessa: false, ceu: null, neblina: null, sol: 1, nebPerto: 150, nebLonge: 650 };
   for (const m of todosMods()) {
     if (!modAtivo(m)) { if (modsPlacas[m.id]) { scene.remove(modsPlacas[m.id]); delete modsPlacas[m.id]; } continue; }
     const j = m.ajustes || {};
-    for (const k of ['vel', 'pulo', 'grav', 'escala']) if (j[k]) a[k] *= +j[k];
+    for (const k of ['vel', 'pulo', 'grav', 'escala', 'gordo', 'alto', 'cabeca']) if (j[k]) a[k] *= +j[k];
+    if (j.voa) a.voa = true; if (j.atravessa) a.atravessa = true;
     if (j.ceu) a.ceu = j.ceu; if (j.neblina) a.neblina = j.neblina; if (j.sol) a.sol *= +j.sol; if (j.nebPerto) a.nebPerto = j.nebPerto; if (j.nebLonge) a.nebLonge = j.nebLonge;
     if (m.placa && !modsPlacas[m.id]) modsPlacas[m.id] = placaLivre(String(m.placa.texto).slice(0, 40), +m.placa.x || 0, +m.placa.y || 0, 5, 0.4);
     if (m.codigo && !m._rodou) { m._rodou = true; try { new Function('jogo', m.codigo)({ scene, THREE, jogador, estado, aviso, MOD, placaLivre, npc, SOM, tempo }); } catch (e) { aviso('Erro no mod ' + m.nome + ': ' + e.message, 4000); } }
   }
   dlcLiga(!!(modsSt.dlc && modsSt.dlcOn));
-  MOD.vel = a.vel; MOD.pulo = a.pulo; MOD.grav = a.grav; MOD.escala = a.escala;
+  MOD.vel = a.vel; MOD.pulo = a.pulo; MOD.grav = a.grav; MOD.escala = Math.max(TAM_MIN, Math.min(TAM_MAX, a.escala));
+  const lim = (v, a, b) => Math.max(a, Math.min(b, v)); MOD.gordo = lim(a.gordo, 0.3, 4); MOD.alto = lim(a.alto, 0.3, 4); MOD.cabeca = lim(a.cabeca, 0.3, 5); MOD.voa = a.voa; MOD.atravessa = a.atravessa;   // vários mods de tamanho juntos multiplicam, mas param em 1/15 e 20×
   if (!noite) {
     scene.background = new THREE.Color(a.ceu || '#9ecbff'); renderer.setClearColor(a.ceu || '#9ecbff');
     scene.fog = new THREE.Fog(a.neblina || '#bfdcff', a.nebPerto, a.nebLonge);
@@ -160,6 +174,7 @@ const dlcTarefaAtual = () => DLC.cap ? DLC.cap.tarefas[DLC.tarefa] : null;
 function dlcInicia(n) {
   DLC.cap = dlcCapitulo(n); DLC.tarefa = 0;
   preparaSabado();
+  Missoes.carrega([]);   // o motor esvazia (senão sobra missão do capítulo anterior concluindo por posição); o DLC escreve direto na lista
   missoes.splice(0, missoes.length, ...DLC.cap.tarefas.map((t, i) => ({ id: 'dlc' + i, txt: t.txt, ok: false }))); renderMissoes();
   document.querySelector('#missao h3').textContent = 'Capítulo ' + n + ' — ' + DLC.cap.titulo;
   textoNoite.textContent = 'Capítulo ' + n + ' — ' + DLC.cap.titulo; textoNoite.style.opacity = 1;
@@ -257,7 +272,10 @@ function desenhaMods() {
     h += '<div><b>Criar mod</b> — mexe nos controles, salva e ele aparece em "Meus mods" (dá pra baixar o .json e mandar pros amigos).</div>' +
       '<label>Emoji <input type="text" id="mdEmoji" value="🧩" size="2"></label><label>Nome <input type="text" id="mdNome" placeholder="Meu mod" size="18"></label><label>Autor <input type="text" id="mdAutor" placeholder="seu nome" size="12"></label><br>' +
       '<label>Descrição <input type="text" id="mdDesc" placeholder="o que ele faz" size="40"></label><br>' +
-      [['vel', 'Velocidade', 0.3, 4], ['pulo', 'Pulo', 0.3, 3], ['grav', 'Gravidade', 0.1, 3], ['escala', 'Tamanho', 0.3, 3], ['sol', 'Luz do sol', 0.2, 1.5]].map(([k, l, a, b]) => '<label>' + l + ' <input type="range" data-aj="' + k + '" min="' + a + '" max="' + b + '" step="0.05" value="1"> <span id="v_' + k + '">1×</span></label>').join('') + '<br>' +
+      [['vel', 'Velocidade', 0.3, 4], ['pulo', 'Pulo', 0.3, 3], ['grav', 'Gravidade', 0.1, 3], ['gordo', 'Gordura', 0.4, 3], ['alto', 'Altura', 0.4, 3], ['cabeca', 'Cabeça', 0.4, 4], ['sol', 'Luz do sol', 0.2, 1.5]].map(([k, l, a, b]) => '<label>' + l + ' <input type="range" data-aj="' + k + '" min="' + a + '" max="' + b + '" step="0.05" value="1"> <span id="v_' + k + '">1×</span></label>').join('') +
+      // tamanho: régua em escala log2 (o meio é 1×), senão de 1/15 a 1 sobrava um pedacinho de 3% da régua
+      '<label>Tamanho <input type="range" data-aj="escala" data-log="1" min="' + Math.log2(TAM_MIN).toFixed(3) + '" max="' + Math.log2(TAM_MAX).toFixed(3) + '" step="0.01" value="0" style="width:220px"> <span id="v_escala">1×</span></label>' + '<br>' +
+      '<label><input type="checkbox" id="mdVoa"> 🕊️ Voar (segure Espaço)</label><label><input type="checkbox" id="mdAtravessa"> 👻 Atravessar paredes</label><br>' +
       '<label><input type="checkbox" id="mdCeuOn"> Cor do céu <input type="color" id="mdCeu" value="#9ecbff"></label><label><input type="checkbox" id="mdNebOn"> Neblina <input type="color" id="mdNeb" value="#bfdcff"> perto <input type="range" id="mdNebP" min="5" max="150" value="150"></label><br>' +
       '<label><input type="checkbox" id="mdPlacaOn"> Placa com texto <input type="text" id="mdPlaca" placeholder="Oi alcateia!" size="24"> em <select id="mdLugar">' + DESTINOS.map(([n, x, y]) => '<option value="' + x + ',' + y + '">' + esc(n) + '</option>').join('') + '</select></label><br>' +
       '<details><summary style="cursor:pointer">💻 Avançado: código JavaScript (roda uma vez ao instalar; recebe <code>jogo</code> com scene, THREE, jogador, estado, aviso, MOD, placaLivre, npc, SOM)</summary><textarea id="mdCodigo" rows="4" placeholder="jogo.aviso(\'Olá do meu mod!\', 3000);"></textarea></details>' +
@@ -285,10 +303,12 @@ function desenhaMods() {
   modsEl.querySelectorAll('[data-skin]').forEach(el => el.onclick = () => { const s = SKINS_CATALOGO.concat(DLC_INFO.skins, modsSt.skins).find(x => x.id === el.dataset.skin); aplicaSkin(s); SOM.coleta(); });
   modsEl.querySelectorAll('[data-baixaSkin]').forEach(el => el.onclick = () => { const s = SKINS_CATALOGO.concat(DLC_INFO.skins, modsSt.skins).find(x => x.id === el.dataset.baixaskin); baixaArquivo('skin-' + s.id + '.json', s); });
   modsEl.querySelectorAll('[data-apagaSkin]').forEach(el => el.onclick = () => { modsSt.skins = modsSt.skins.filter(x => x.id !== el.dataset.apagaskin); salvaMods(); desenhaMods(); });
-  modsEl.querySelectorAll('[data-aj]').forEach(el => el.oninput = () => document.getElementById('v_' + el.dataset.aj).textContent = (+el.value).toFixed(2).replace(/\.?0+$/, '') + '×');
+  modsEl.querySelectorAll('[data-aj]').forEach(el => el.oninput = () => document.getElementById('v_' + el.dataset.aj).textContent = el.dataset.log ? textoTamanho(valorAjuste(el)) : (+el.value).toFixed(2).replace(/\.?0+$/, '') + '×');
   const montaMod = () => {
     const m = { id: 'meu_' + Date.now(), emoji: v('mdEmoji') || '🧩', nome: v('mdNome') || 'Meu mod', autor: v('mdAutor') || 'você', desc: v('mdDesc'), ajustes: {} };
-    modsEl.querySelectorAll('[data-aj]').forEach(el => { if (+el.value !== 1) m.ajustes[el.dataset.aj] = +el.value; });
+    modsEl.querySelectorAll('[data-aj]').forEach(el => { const val = valorAjuste(el); if (val !== 1) m.ajustes[el.dataset.aj] = val; });
+    if (document.getElementById('mdVoa').checked) m.ajustes.voa = true;
+    if (document.getElementById('mdAtravessa').checked) m.ajustes.atravessa = true;
     if (document.getElementById('mdCeuOn').checked) m.ajustes.ceu = v('mdCeu');
     if (document.getElementById('mdNebOn').checked) { m.ajustes.neblina = v('mdNeb'); m.ajustes.nebPerto = +v('mdNebP'); m.ajustes.nebLonge = +v('mdNebP') * 4; }
     if (document.getElementById('mdPlacaOn').checked && v('mdPlaca')) { const [x, y] = v('mdLugar').split(','); m.placa = { texto: v('mdPlaca'), x: +x, y: +y }; }

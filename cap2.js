@@ -21,14 +21,10 @@ const matCobraBarriga = new THREE.MeshPhongMaterial({ color: 0xd8d0a0, shininess
 // ---------- menu: escolha do capítulo ----------
 document.querySelectorAll('#inicio .cap').forEach(el => el.addEventListener('click', e => {
   e.stopPropagation();
-  const c = el.dataset.cap; capituloEscolhido = c === '2b' ? 2 : c === '3b' ? 3 : +c; CAP2.continuar = c === '2b' ? (leSave() || {}).ponto : null; if (typeof CAP3 !== 'undefined') CAP3.continuar = c === '3b' ? (leSave() || {}).ponto : null;
+  capituloEscolhido = +el.dataset.cap; CAP2.continuar = null; if (typeof CAP3 !== 'undefined') CAP3.continuar = null; if (typeof CAP4 !== 'undefined') CAP4.continuar = null;   // escolher um capítulo começa ele do início ("Continuar" fica em extras.js)
   document.querySelectorAll('#inicio .cap').forEach(x => x.classList.toggle('sel', x === el));
 }));
-// save: gravado depois de hastear a bandeira no cap. 2; aparece no menu como "Continuar"
-function leSave() { try { return JSON.parse(localStorage.getItem('escoteiros.save') || 'null'); } catch (e) { return null; } }
-function salvaCap2(ponto, cap) { try { localStorage.setItem('escoteiros.save', JSON.stringify({ cap: cap || 2, ponto, personagem: personagemId, quando: Date.now() })); } catch (e) {} aviso('💾 Progresso salvo: dá pra continuar daqui pelo menu inicial.', 4000); mostraContinuar(); }
-function mostraContinuar() { const s = leSave(); for (const [cap, sel] of []) { const el = document.querySelector('#inicio .cap[data-cap="' + sel + '"]'); if (el) el.style.display = s && s.cap === cap ? 'inline-block' : 'none'; } }
-mostraContinuar();
+function leSave() { try { return JSON.parse(localStorage.getItem('escoteiros.save') || 'null'); } catch (e) { return null; } }   // o save é gravado por extras.js
 const btnCap2 = document.getElementById('btnCap2');
 let proximoCap = 2;
 btnCap2.addEventListener('click', () => { btnCap2.style.display = 'none'; capituloEscolhido = proximoCap; CAP2.continuar = null; iniciaCapitulo(); travar(); });
@@ -187,8 +183,8 @@ function iniciaCap2() {
   interativos.find(i => i.nome === 'Falar com Akelá').acao = c2Akela;
   interativos.find(i => i.nome === 'Falar com Chefe Diego').acao = c2Diego;
   interativos.find(i => i.nome === 'Falar com Lobinho Alisson').acao = () => aviso('Lobinho Alisson: "' + (CAP2.fase === 'iate' ? 'Barco a remo? Eu... eu enjoo fácil, viu. Mas eu vou!' : CAP2.fase === 'farol' ? 'Aquela luz na casinha... será que é assombração de novo?' : 'O Fantasma tá dormindo debaixo da árvore. Ele não tem medo de cobra... mas eu tenho!') + '"', 4000);
-  // missões do capítulo
-  missoes.splice(0, missoes.length, { id: 'c2_akela', txt: 'Sábado de novo! Falar com a Akelá na árvore do lobinhos.com', ok: false }); renderMissoes();
+  // missões do capítulo (dados/cap2_missoes.js): a lista do HUD recomeça só com a da Akelá
+  Missoes.carrega(DADOS.cap2Missoes); missoesSemAviso(() => Missoes.da('c2_akela'));
   CAP2.fase = 'abre';
   cena = { cap2: true, tipo: 'abre', t: 0 };
   textoNoite.textContent = 'Uma semana depois — sábado, de novo no camping'; textoNoite.style.opacity = 1;
@@ -200,13 +196,7 @@ function retomaDepoisDaBandeira() {
   for (const r of CAP2.rastros) r.visible = false; CAP2.rastrosVistos = 4;
   CAP2.etapa = C2_ETAPAS.length; gaviaoEtapa(3); CAP2.placaCanteiro.visible = true;
   CAP2.temBandeira = true; bandeira.visible = true; bandeiraAlt = bandeiraAlvo = 5.4;
-  missoes.splice(0, missoes.length,
-    { id: 'c2_akela', txt: 'Falar com a Akelá na árvore do lobinhos.com', ok: true }, { id: 'c2_rastro', txt: 'Seguir o rastro pelo chão (4/4)', ok: true },
-    { id: 'c2_cobra', txt: 'Chegar perto da pedra no mato do arroio', ok: true }, { id: 'c2_diego', txt: 'Falar com o Chefe Diego na portaria sobre a cobra', ok: true },
-    { id: 'c2_gaviao', txt: 'Construir o gavião gigante (' + C2_ETAPAS.length + '/' + C2_ETAPAS.length + ' etapas)', ok: true }, { id: 'c2_pilotar', txt: 'Espantar a cobra com o gavião', ok: true },
-    { id: 'c2_pegar', txt: 'Pegar a bandeira na pedra', ok: true }, { id: 'bandeira', txt: 'Hastear a bandeira de novo na árvore do lobinhos.com', ok: true },
-    { id: 'c2_barco', txt: 'Passeio: entrar no barco a remo na Praia do Camping (a Akelá e o Alisson vão junto)', ok: false });
-  renderMissoes();
+  missoesSemAviso(() => { Missoes.avancaAte('c2_barco'); Missoes.texto('c2_rastro', 'Seguir o rastro pelo chão (4/4)'); Missoes.texto('c2_gaviao', c2TxtGaviao()); });
   CAP2.fase = 'iate';
   textoNoite.textContent = 'Continuando: a bandeira já está de volta na árvore';
   if (cena) cena.t = 1.5;   // abertura mais curta
@@ -214,13 +204,14 @@ function retomaDepoisDaBandeira() {
 }
 
 // ---------- diálogos e interações ----------
-function c2Missao(id, txt) { if (!missoes.find(m => m.id === id)) { missoes.push({ id, txt, ok: false }); renderMissoes(); } }
+// missões: dados/cap2_missoes.js; aqui só Missoes.da / conclui / texto no ponto certo da história
+const c2TxtGaviao = () => 'Construir o gavião gigante no canteiro atrás da cantina (' + CAP2.etapa + '/' + C2_ETAPAS.length + ' etapas)';
 const akelaMesh = () => npcs.find(n => n.nome === 'Akelá').mesh;
 function c2Akela() {
   const f = CAP2.fase;
   if (f === 'abre' || f === 'akela') {
     aviso('Akelá: "' + PERSONAGENS[personagemId].nome + ', que bom que chegou! A BANDEIRA SUMIU da árvore. E olha só esse rastro esquisito no chão... vai seguindo ele e vê pra onde vai."', 6000);
-    completa('c2_akela'); CAP2.fase = 'rastro'; c2Missao('c2_rastro', 'Seguir o rastro pelo chão (0/4)');
+    Missoes.falou('Akelá'); CAP2.fase = 'rastro'; Missoes.da('c2_rastro');
   } else if (f === 'rastro') aviso('Akelá: "Segue o rastro! Ele passa por trás da cantina, rumo ao arroio."', 4000);
   else if (f === 'cobra') aviso('Akelá: "Uma COBRA enrolada na bandeira?! Ninguém chega perto. Vai lá falar com o Chefe Diego na portaria, ele sabe lidar com bicho."', 5000);
   else if (f === 'gaviao') aviso('Akelá: "Gavião gigante de madeira? Só o Chefe Diego mesmo... Vai lá construir no canteiro atrás da cantina, a alcateia ajuda!"', 5000);
@@ -234,8 +225,8 @@ function c2Diego() {
   const f = CAP2.fase;
   if (f === 'cobra') {
     aviso('Chefe Diego: "Cobra na bandeira? Cobra tem medo de GAVIÃO. Vamos construir um gavião GIGANTE de madeira e vocês pilotam ele por dentro: batem as asas, estalam o bico, acendem os olhos. A cobra vai fugir pra lagoa!"', 8000);
-    completa('c2_diego'); CAP2.fase = 'gaviao'; CAP2.etapa = 0; CAP2.placaCanteiro.visible = true;
-    c2Missao('c2_gaviao', 'Construir o gavião gigante no canteiro atrás da cantina (0/' + C2_ETAPAS.length + ' etapas)');
+    Missoes.falou('Chefe Diego'); CAP2.fase = 'gaviao'; CAP2.etapa = 0; CAP2.placaCanteiro.visible = true;
+    Missoes.da('c2_gaviao');
   } else if (f === 'gaviao') aviso('Chefe Diego: "Serra as asas, prega o corpo e amarra o bico. Vai ficar melhor possível!"', 4000);
   else if (f === 'pilotar') aviso('Chefe Diego: "Entra no gavião e vai! ← → batem as asas, E estala o bico, Q acende os olhos e grita."', 5000);
   else aviso('Chefe Diego: "Bom sábado, ' + PERSONAGENS[personagemId].nome + '! Vai lá com a Akelá."', 3500);
@@ -255,8 +246,8 @@ function cap2Etapa() {   // chamado por etapaConcluida() quando o minigame termi
   if (typeof cap3Etapa === 'function' && cap3Etapa()) return true;
   if (!CAP2 || !CAP2.ativo || CAP2.fase !== 'gaviao') return false;
   CAP2.etapa++; gaviaoEtapa(C2_ETAPAS_PARTE.filter(n => CAP2.etapa >= n).length); SOM.coleta();
-  const m = missoes.find(x => x.id === 'c2_gaviao'); if (m) { m.txt = 'Construir o gavião gigante no canteiro atrás da cantina (' + CAP2.etapa + '/' + C2_ETAPAS.length + ' etapas)'; renderMissoes(); }
-  if (CAP2.etapa >= C2_ETAPAS.length) { completa('c2_gaviao'); CAP2.fase = 'pilotar'; c2Missao('c2_pilotar', 'Entrar no gavião e espantar a cobra (← → asas · E bico · Q olhos e grito)'); aviso('🦅 O gavião gigante está pronto! Entre nele pela portinha atrás.', 5000); }
+  Missoes.texto('c2_gaviao', c2TxtGaviao());
+  if (CAP2.etapa >= C2_ETAPAS.length) { Missoes.conclui('c2_gaviao'); CAP2.fase = 'pilotar'; Missoes.da('c2_pilotar'); aviso('🦅 O gavião gigante está pronto! Entre nele pela portinha atrás.', 5000); }
   else aviso('✅ Etapa pronta! Próxima: ' + C2_ETAPAS[CAP2.etapa][2] + ' (aperte E de novo)', 3500);
   return true;
 }
@@ -288,9 +279,9 @@ function cap2PadExtra(j, inp) {   // controles dos jogadores extras durante as c
 interativos.push({ x: 0, z: 0, r: 0, nome: 'Olhar o rastro', cond: () => CAP2.ativo && CAP2.fase === 'rastro', acao: () => {
   const r = CAP2.rastros[CAP2.rastrosVistos]; if (!r) return;
   CAP2.rastrosVistos++;
-  const m = missoes.find(x => x.id === 'c2_rastro'); if (m) { m.txt = 'Seguir o rastro pelo chão (' + CAP2.rastrosVistos + '/4)'; renderMissoes(); }
+  Missoes.texto('c2_rastro', 'Seguir o rastro pelo chão (' + CAP2.rastrosVistos + '/4)');
   aviso(['Um rastro ondulado na terra... não é de bicicleta, não é de pé. Parece uma linha em S.', 'O rastro continua, atrás da cantina, indo pro lado do arroio.', 'Tem escamas no chão! Isso é rastro de COBRA. E ela é grande.', 'O rastro acaba ali na frente, numa pedra no mato do arroio... e tem um pano verde lá!'][CAP2.rastrosVistos - 1], 4500); SOM.coleta();
-  if (CAP2.rastrosVistos >= 4) { completa('c2_rastro'); CAP2.fase = 'cobra'; c2Missao('c2_cobra', 'Chegar perto da pedra no mato do arroio'); }
+  if (CAP2.rastrosVistos >= 4) { Missoes.conclui('c2_rastro'); CAP2.fase = 'cobra'; Missoes.da('c2_cobra'); }
 } });
 interativos.push({ x: 0, z: 0, r: 15, nome: 'Construir o gavião', cond: () => CAP2.ativo && CAP2.fase === 'gaviao' && !mini, acao: () => {
   estado.yaw = Math.atan2(CAP2.gav.mesh.position.x - estado.pos.x, CAP2.gav.mesh.position.z - estado.pos.z);
@@ -300,7 +291,7 @@ interativos.push({ x: 0, z: 0, r: 15, nome: 'Entrar no gavião e pilotar', cond:
 interativos.push({ x: 0, z: 0, r: 4, nome: 'Pegar a bandeira', cond: () => CAP2.ativo && CAP2.fase === 'bandeira' && !CAP2.temBandeira, acao: () => {
   CAP2.temBandeira = true; CAP2.cobra.band.visible = false; if (CAP2.cobra.bandChao) CAP2.cobra.bandChao.visible = false; SOM.coleta();
   bandeira.visible = true; bandeiraAlt = bandeiraAlvo = 1.2;
-  completa('c2_pegar'); c2Missao('bandeira', 'Hastear a bandeira de novo na árvore do lobinhos.com');
+  Missoes.conclui('c2_pegar'); Missoes.da('bandeira');
   aviso('🏳️ Pegou a bandeira de volta! Leva pra árvore do lobinhos.com e hasteia com a alcateia.', 4500);
 } });
 interativos.push({ x: 0, z: 0, r: 10, nome: 'Entrar no barco a remo', cond: () => CAP2.ativo && CAP2.fase === 'iate' && !mini, acao: iniciaRemar });
@@ -355,7 +346,7 @@ function atualizaGaviao(dt) {
       estado.pos.set(px, alt(px, pz), pz); jogador.position.copy(estado.pos); jogador.visible = true;
       jogadores.forEach((j, i) => { if (j.mesh) { j.pos.set(px + 1.2 * (i + 1), 0, pz + 0.6 * (i + 1)); j.pos.y = alt(j.pos.x, j.pos.z); j.mesh.position.copy(j.pos); j.mesh.visible = true; } });
       cena = null; miniEl.style.display = 'none';
-      completa('c2_pilotar'); CAP2.fase = 'bandeira'; c2Missao('c2_pegar', 'Pegar a bandeira na pedra');
+      Missoes.minigame('gaviao'); CAP2.fase = 'bandeira'; Missoes.da('c2_pegar');
       aviso('🦅 A cobra fugiu pra lagoa! A bandeira ficou na pedra.', 4000); SOM.missao();
       return;
     }
@@ -439,11 +430,11 @@ function iniciaIate() {
   cena.aoTerminar = () => { fadeEl.style.opacity = 1; setTimeout(iniciaNoiteCap2, 1300); };
   miniEl.style.display = 'none';
   camera.position.set(316, 3.2, -168); camera.lookAt(332, 1.2, -192);
-  setTimeout(() => { fadeEl.style.opacity = 0; completa('c2_barco'); c2ProximaFala(); }, 300);
+  setTimeout(() => { fadeEl.style.opacity = 0; Missoes.conclui('c2_barco'); c2ProximaFala(); }, 300);
 }
 function iniciaNoiteCap2() {
   // de volta na praia; anoiteceu
-  cena = null; c2Missao('c2_veleiros', 'Ver os veleiros do Iate Clube'); completa('c2_veleiros');
+  cena = null; Missoes.da('c2_veleiros'); Missoes.conclui('c2_veleiros');
   for (const o of obstaculos) if (o.npc === alisson || o.npc === akelaMesh()) o.r = 0.5;
   estado.pos.set(98, altO(98, -22), 22); estado.yaw = Math.PI; jogador.position.copy(estado.pos);
   const ak = akelaMesh(); ak.position.set(94, altO(94, -21), 21); ak.rotation.y = 2.4; for (const o of obstaculos) if (o.npc === ak) { o.x = 94; o.z = 21; }
@@ -453,7 +444,7 @@ function iniciaNoiteCap2() {
   CAP2.barco.mesh.position.set(C2.barco[0], 0.1, -C2.barco[1]); CAP2.barco.mesh.rotation.set(0, 0, 0);
   ligaNoite(true); SOM.noite(false); SOM.noite(true, true); noite = false; CAP2.noite = true;
   lampiao.visible = true; luzPraia.intensity = 1.6;
-  CAP2.fase = 'farol'; c2Missao('c2_farol', 'À noite: esperar na praia, perto da casinha do salva-vidas, e ver a luz');
+  CAP2.fase = 'farol'; Missoes.da('c2_farol');
   cam.yaw = Math.PI; cam.pitch = 0.2; camera.position.set(98, 3, 16);
   textoNoite.textContent = 'À noite, na Praia do Camping'; textoNoite.style.opacity = 1;
   setTimeout(() => { fadeEl.style.opacity = 0; }, 400);
@@ -485,7 +476,7 @@ function atualizaPescador(dt) {
         'Akelá: "Mistério resolvido, alcateia! A bandeira voltou, a cobra foi embora e o farol tem dono. Grande Uivo! AUUUUUU!"',
       ];
       cena.aoTerminar = () => {
-        cena = null; completa('c2_farol'); CAP2.fase = 'fim'; SOM.uivo();
+        cena = null; Missoes.conclui('c2_farol'); CAP2.fase = 'fim'; SOM.uivo();
         setTimeout(() => { aviso('🏕️ FIM DO CAPÍTULO 2 — obrigado por jogar! A cobra, o gavião gigante, o Iate Clube e a lenda do farol. Até o próximo sábado! 🐺', 12000); SOM.fim(); mostraBotaoCap3(); }, 1500);
       };
       c2ProximaFala();
@@ -537,10 +528,10 @@ function atualizaCap2(dt) {
   if (CAP2.fase === 'cobra' && !cena) {
     const d = Math.hypot(estado.pos.x - CAP2.cobra.mesh.position.x, estado.pos.z - CAP2.cobra.mesh.position.z);
     if (d < 7 && !CAP2.cobraVista) { CAP2.cobraVista = true; SOM.grr(); aviso('Cobra: "SSSSSSSS!"', 2500); aplicaEmote(jogador, 'surpreso', 3); }
-    if (d < 7 && CAP2.cobraVista && !CAP2.cobraAviso && tempo > 0) { CAP2.cobraAviso = true; setTimeout(() => { aviso('😱 Uma cobra ENORME enrolada na bandeira! Ninguém consegue chegar perto. Melhor falar com a Akelá e o Chefe Diego.', 5000); completa('c2_cobra'); c2Missao('c2_diego', 'Falar com o Chefe Diego na portaria sobre a cobra'); }, 2600); }
+    if (d < 7 && CAP2.cobraVista && !CAP2.cobraAviso && tempo > 0) { CAP2.cobraAviso = true; setTimeout(() => { aviso('😱 Uma cobra ENORME enrolada na bandeira! Ninguém consegue chegar perto. Melhor falar com a Akelá e o Chefe Diego.', 5000); Missoes.conclui('c2_cobra'); Missoes.da('c2_diego'); }, 2600); }
   }
   // a bandeira voltou pra árvore → passeio
-  if (CAP2.fase === 'bandeira' && CAP2.temBandeira) { const m = missoes.find(x => x.id === 'bandeira'); if (m && m.ok) { CAP2.fase = 'iate'; if (CAP2.cobra.bandChao) CAP2.cobra.bandChao.visible = false; c2Missao('c2_barco', 'Passeio: entrar no barco a remo na Praia do Camping (a Akelá e o Alisson vão junto)'); setTimeout(c2Akela, 3000); } }
+  if (CAP2.fase === 'bandeira' && CAP2.temBandeira && Missoes.concluida('bandeira')) { CAP2.fase = 'iate'; if (CAP2.cobra.bandChao) CAP2.cobra.bandChao.visible = false; Missoes.da('c2_barco'); setTimeout(c2Akela, 3000); }
   // noite do capítulo: lampião e lanterna (o resto da noite do cap. 1 fica desligado)
   if (CAP2.noite) {
     lampiao.position.set(luzPraia.position.x, altO(SALVA[0], SALVA[1]) + 3.4 + Math.sin(tempo * 2) * 0.1, luzPraia.position.z + Math.sin(tempo * 1.7) * 0.4); luzPraia.position.z = lampiao.position.z; luzPraia.intensity = 1.3 + Math.sin(tempo * 9) * 0.3;
@@ -553,11 +544,11 @@ function atualizaCap2(dt) {
 if (DEBUG && qs.has('cap2')) try {
   iniciaCap2(); cena = null; fadeEl.style.opacity = 0; textoNoite.style.opacity = 0; document.getElementById('hud').style.opacity = 1; CAP2.fase = 'akela';
   const f = qs.get('cap2');
-  if (f === 'gaviao') { CAP2.fase = 'pilotar'; CAP2.etapa = C2_ETAPAS.length; gaviaoEtapa(3); estado.pos.set(C2.canteiro[0] + 3, altO(C2.canteiro[0] + 3, C2.canteiro[1]), -C2.canteiro[1]); }
-  if (f === 'obra') { CAP2.fase = 'gaviao'; CAP2.placaCanteiro.visible = true; estado.pos.set(C2.canteiro[0] + 3, altO(C2.canteiro[0] + 3, C2.canteiro[1]), -C2.canteiro[1]); }
-  if (f === 'bandeira') { CAP2.fase = 'bandeira'; CAP2.cobra.fase = 'foge'; estado.pos.set(C2.cobra[0] + 4, altO(C2.cobra[0] + 4, C2.cobra[1]), -C2.cobra[1]); }
-  if (f === 'iate') { CAP2.fase = 'iate'; estado.pos.set(100, altO(100, -26), 26); }
+  if (f === 'gaviao') { missoesSemAviso(() => Missoes.avancaAte('c2_pilotar')); CAP2.fase = 'pilotar'; CAP2.etapa = C2_ETAPAS.length; gaviaoEtapa(3); estado.pos.set(C2.canteiro[0] + 3, altO(C2.canteiro[0] + 3, C2.canteiro[1]), -C2.canteiro[1]); }
+  if (f === 'obra') { missoesSemAviso(() => Missoes.avancaAte('c2_gaviao')); CAP2.fase = 'gaviao'; CAP2.placaCanteiro.visible = true; estado.pos.set(C2.canteiro[0] + 3, altO(C2.canteiro[0] + 3, C2.canteiro[1]), -C2.canteiro[1]); }
+  if (f === 'bandeira') { missoesSemAviso(() => Missoes.avancaAte('c2_pegar')); CAP2.fase = 'bandeira'; CAP2.cobra.fase = 'foge'; estado.pos.set(C2.cobra[0] + 4, altO(C2.cobra[0] + 4, C2.cobra[1]), -C2.cobra[1]); }
+  if (f === 'iate') { missoesSemAviso(() => Missoes.avancaAte('c2_barco')); CAP2.fase = 'iate'; estado.pos.set(100, altO(100, -26), 26); }
   if (f === 'save') { CAP2.continuar = 'bandeira'; retomaDepoisDaBandeira(); cena = null; }
-  if (f === 'farol') { iniciaNoiteCap2(); }
+  if (f === 'farol') { missoesSemAviso(() => Missoes.avancaAte('c2_veleiros')); iniciaNoiteCap2(); }
   if (qs.get('pos')) { const [x, y] = qs.get('pos').split(',').map(Number); estado.pos.set(x, altO(x, y), -y); }
 } catch (e) { dbg('ERRO cap2 debug: ' + e.message + ' ' + (e.stack || '').split('\n')[0]); }
